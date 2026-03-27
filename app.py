@@ -856,6 +856,11 @@ def camera_setup():
     return render_template("camera_setup.html")
 
 
+@app.route("/terms")
+def terms():
+    return render_template("terms.html")
+
+
 @app.route("/login", methods=["GET", "POST"])
 @limiter.limit("20 per minute")
 def login():
