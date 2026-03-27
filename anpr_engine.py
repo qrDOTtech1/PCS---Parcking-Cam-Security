@@ -128,7 +128,9 @@ class ANPREngine:
         detections = []
 
         # Étape 1 : YOLO — détecter les véhicules
-        results = self._yolo(img, verbose=False, conf=0.3)
+        # Augmentation du seuil de confiance (0.45 au lieu de 0.3) pour réduire la "nervosité" du modèle nano
+        # Ajout de l'IoU (0.5) pour le Non-Maximum Suppression (réduit les détections multiples sur un même objet)
+        results = self._yolo(img, verbose=False, conf=0.45, iou=0.5)
 
         vehicle_crops = []
         for r in results:
