@@ -197,9 +197,33 @@ def create_tables():
             logger.error(f"Migration error: {e}")
 
         try:
-            conn.execute(text("ALTER TABLE camera ADD COLUMN config_json TEXT"))
+            conn.execute(
+                text("ALTER TABLE camera ADD COLUMN address VARCHAR(200) DEFAULT ''")
+            )
         except:
             pass
+        try:
+            conn.execute(
+                text(
+                    "ALTER TABLE plate_detection ADD COLUMN vehicle_type VARCHAR(20) DEFAULT 'unknown'"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE plate_detection ADD COLUMN vehicle_color VARCHAR(20) DEFAULT 'unknown'"
+                )
+            )
+        except:
+            pass
+        try:
+            conn.execute(
+                text(
+                    "ALTER TABLE user ADD COLUMN subscription_mode VARCHAR(30) DEFAULT 'standard'"
+                )
+            )
+        except:
+            pass
+
         try:
             conn.execute(
                 text(
@@ -1071,7 +1095,29 @@ def camera_management(camera_id):
         flash("Caméra non trouvée.", "error")
         return redirect(url_for("dashboard"))
 
-    return render_template("camera_management.html", camera=camera)
+    # Stats for Pro/Emergency
+    stats = {}
+    if session.get("user_id"):
+        user = User.query.get(session["user_id"])
+        if user and user.subscription_mode in ["emergency", "pro"]:
+            detections = PlateDetection.query.filter_by(camera_id=camera_id).all()
+            total = len(detections)
+            if total > 0:
+                stats = {
+                    "total": total,
+                    "by_type": {},
+                    "by_color": {},
+                    "threats": len([d for d in detections if d.is_threat]),
+                }
+                for d in detections:
+                    stats["by_type"][d.vehicle_type] = (
+                        stats["by_type"].get(d.vehicle_type, 0) + 1
+                    )
+                    stats["by_color"][d.vehicle_color] = (
+                        stats["by_color"].get(d.vehicle_color, 0) + 1
+                    )
+
+    return render_template("camera_management.html", camera=camera, stats=stats)
 
 
 @app.route("/camera/<int:camera_id>", methods=["GET"])

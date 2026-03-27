@@ -13,8 +13,8 @@ class User(db.Model):
     subscription_end = db.Column(db.DateTime, nullable=True)
     subscription_mode = db.Column(db.String(30), default="standard")
     max_cameras = db.Column(db.Integer, default=3)
-    max_blacklist = db.Column(db.Integer, default=50)       # -1 = unlimited
-    features_json = db.Column(db.Text, default="[]")        # JSON list of enabled features
+    max_blacklist = db.Column(db.Integer, default=50)  # -1 = unlimited
+    features_json = db.Column(db.Text, default="[]")  # JSON list of enabled features
     admin_notes = db.Column(db.Text, default="")
 
     cameras = db.relationship(
@@ -51,7 +51,7 @@ class Camera(db.Model):
     stream_auto_mode = db.Column(db.String(20), default="off")
     is_streaming = db.Column(db.Boolean, default=False)
     flash_detect_enabled = db.Column(db.Boolean, default=True)  # gyrophare détection
-    address = db.Column(db.String(200), default="")             # adresse postale
+    address = db.Column(db.String(200), default="")  # adresse postale
 
     def get_config(self):
         import json
@@ -76,15 +76,25 @@ class Camera(db.Model):
 class Blacklist(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    plate_normalized = db.Column(db.String(20), nullable=True)   # nullable: type/color-only rules
+    plate_normalized = db.Column(
+        db.String(20), nullable=True
+    )  # nullable: type/color-only rules
     description = db.Column(db.String(200))
     is_police = db.Column(db.Boolean, default=False)
     # Advanced vehicle filters (emergency / enterprise modes)
-    vehicle_type = db.Column(db.String(20), default="any")   # any/car/truck/bus/motorcycle
-    vehicle_color = db.Column(db.String(20), default="any")  # any/red/blue/white/black/silver/yellow/green/orange
-    alert_label = db.Column(db.String(50), default="")       # e.g. "Police", "SAMU", "Pompiers"
+    vehicle_type = db.Column(
+        db.String(20), default="any"
+    )  # any/car/truck/bus/motorcycle
+    vehicle_color = db.Column(
+        db.String(20), default="any"
+    )  # any/red/blue/white/black/silver/yellow/green/orange
+    alert_label = db.Column(
+        db.String(50), default=""
+    )  # e.g. "Police", "SAMU", "Pompiers"
     alert_priority = db.Column(db.String(10), default="normal")  # normal/high/critical
-    match_plate = db.Column(db.Boolean, default=True)        # False = type+color only (no plate)
+    match_plate = db.Column(
+        db.Boolean, default=True
+    )  # False = type+color only (no plate)
 
 
 class NotificationTarget(db.Model):
@@ -104,6 +114,8 @@ class PlateDetection(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     camera_id = db.Column(db.Integer, db.ForeignKey("camera.id"), nullable=False)
     plate_normalized = db.Column(db.String(20), nullable=False)
+    vehicle_type = db.Column(db.String(20), default="unknown")
+    vehicle_color = db.Column(db.String(20), default="unknown")
     confidence = db.Column(db.Float, nullable=True)
     detected_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_threat = db.Column(db.Boolean, default=False)
@@ -126,15 +138,18 @@ class CameraSummary(db.Model):
     L'IA externe poll GET /api/ai/summaries?since=<iso> pour récupérer les nouveaux.
     Elle peut écrire son analyse dans ai_response et marquer ai_processed=True.
     """
-    id           = db.Column(db.Integer, primary_key=True)
-    user_id      = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    camera_id    = db.Column(db.Integer, db.ForeignKey("camera.id"), nullable=False)
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    camera_id = db.Column(db.Integer, db.ForeignKey("camera.id"), nullable=False)
     period_start = db.Column(db.DateTime, nullable=False)
-    period_end   = db.Column(db.DateTime, nullable=False)
-    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
-    summary_json = db.Column(db.Text, nullable=False)   # JSON structuré (voir ci-dessous)
-    ai_processed = db.Column(db.Boolean, default=False) # IA a lu ce résumé
-    ai_response  = db.Column(db.Text, default="")       # Analyse écrite par l'IA
+    period_end = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    summary_json = db.Column(
+        db.Text, nullable=False
+    )  # JSON structuré (voir ci-dessous)
+    ai_processed = db.Column(db.Boolean, default=False)  # IA a lu ce résumé
+    ai_response = db.Column(db.Text, default="")  # Analyse écrite par l'IA
 
     camera = db.relationship("Camera", backref="summaries")
 
@@ -145,11 +160,14 @@ class AIConfig(db.Model):
     Stocke le fournisseur, la clé API et l'intervalle de résumé souhaité.
     Non utilisé activement — prêt pour branchement futur.
     """
-    id                = db.Column(db.Integer, primary_key=True)
-    user_id           = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True)
-    provider          = db.Column(db.String(30), default="claude")   # claude/openai/custom
-    api_key_encrypted = db.Column(db.Text, default="")               # clé API chiffrée (futur)
-    webhook_url       = db.Column(db.String(255), default="")        # URL push optionnel
-    summary_interval  = db.Column(db.Integer, default=60)            # secondes entre résumés
-    ai_enabled        = db.Column(db.Boolean, default=False)
-    created_at        = db.Column(db.DateTime, default=datetime.utcnow)
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True
+    )
+    provider = db.Column(db.String(30), default="claude")  # claude/openai/custom
+    api_key_encrypted = db.Column(db.Text, default="")  # clé API chiffrée (futur)
+    webhook_url = db.Column(db.String(255), default="")  # URL push optionnel
+    summary_interval = db.Column(db.Integer, default=60)  # secondes entre résumés
+    ai_enabled = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)

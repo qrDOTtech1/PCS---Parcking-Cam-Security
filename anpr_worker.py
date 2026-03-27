@@ -28,12 +28,12 @@ ANPR_LAST_SCAN = {}
 
 # ── Détection gyrophare ─────────────────────────────────────────────────────
 # Historique d'intensité bleue par caméra : liste des N dernières mesures
-BLUE_HISTORY = {}          # camera_id -> list[float]  (couverture bleue 0..1)
-BLUE_HISTORY_SIZE = 8      # nb de frames conservées
-BLUE_FLASH_MIN_MEAN = 0.08 # au moins 8% du cadre bleu en moyenne
-BLUE_FLASH_MIN_VAR  = 0.002 # variance minimale = oscillation (flash vs couleur fixe)
-BLUE_FLASH_DEDUP    = 30   # cooldown entre 2 alertes gyrophare (secondes)
-BLUE_FLASH_LAST     = {}   # camera_id -> timestamp dernière alerte
+BLUE_HISTORY = {}  # camera_id -> list[float]  (couverture bleue 0..1)
+BLUE_HISTORY_SIZE = 8  # nb de frames conservées
+BLUE_FLASH_MIN_MEAN = 0.08  # au moins 8% du cadre bleu en moyenne
+BLUE_FLASH_MIN_VAR = 0.002  # variance minimale = oscillation (flash vs couleur fixe)
+BLUE_FLASH_DEDUP = 30  # cooldown entre 2 alertes gyrophare (secondes)
+BLUE_FLASH_LAST = {}  # camera_id -> timestamp dernière alerte
 
 
 def _measure_blue_coverage(image_bytes):
@@ -43,6 +43,7 @@ def _measure_blue_coverage(image_bytes):
     Retourne une valeur entre 0 et 1.
     """
     import cv2
+
     arr = np.frombuffer(image_bytes, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
@@ -123,9 +124,13 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                         if flash_enabled is None:
                             flash_enabled = True
                         try:
-                            blue_cov = eventlet.tpool.execute(
-                                _measure_blue_coverage, frame_bytes
-                            ) if flash_enabled else 0.0
+                            blue_cov = (
+                                eventlet.tpool.execute(
+                                    _measure_blue_coverage, frame_bytes
+                                )
+                                if flash_enabled
+                                else 0.0
+                            )
                         except Exception:
                             blue_cov = 0.0
 
@@ -182,7 +187,11 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                             veh_color = detection.get("vehicle_color", "unknown")
 
                             # Clé déduplique : plaque OU (type+couleur) si pas de plaque
-                            dedup_key = (cam_id, plate) if plate else (cam_id, veh_type, veh_color)
+                            dedup_key = (
+                                (cam_id, plate)
+                                if plate
+                                else (cam_id, veh_type, veh_color)
+                            )
                             last_seen = RECENT_DETECTIONS.get(dedup_key, 0)
                             if time.time() - last_seen < DEDUP_WINDOW:
                                 continue
@@ -200,8 +209,16 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                                 ).first()
                                 if rule:
                                     # Vérifier aussi vehicle_type et vehicle_color si spécifiés
-                                    type_ok = (not rule.vehicle_type or rule.vehicle_type == "any" or rule.vehicle_type == veh_type)
-                                    color_ok = (not rule.vehicle_color or rule.vehicle_color == "any" or rule.vehicle_color == veh_color)
+                                    type_ok = (
+                                        not rule.vehicle_type
+                                        or rule.vehicle_type == "any"
+                                        or rule.vehicle_type == veh_type
+                                    )
+                                    color_ok = (
+                                        not rule.vehicle_color
+                                        or rule.vehicle_color == "any"
+                                        or rule.vehicle_color == veh_color
+                                    )
                                     if type_ok and color_ok:
                                         matched_rule = rule
 
@@ -212,8 +229,16 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                                     match_plate=False,
                                 ).all()
                                 for rule in type_color_rules:
-                                    type_ok = (not rule.vehicle_type or rule.vehicle_type == "any" or rule.vehicle_type == veh_type)
-                                    color_ok = (not rule.vehicle_color or rule.vehicle_color == "any" or rule.vehicle_color == veh_color)
+                                    type_ok = (
+                                        not rule.vehicle_type
+                                        or rule.vehicle_type == "any"
+                                        or rule.vehicle_type == veh_type
+                                    )
+                                    color_ok = (
+                                        not rule.vehicle_color
+                                        or rule.vehicle_color == "any"
+                                        or rule.vehicle_color == veh_color
+                                    )
                                     if type_ok and color_ok:
                                         matched_rule = rule
                                         break
@@ -226,6 +251,8 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                                     user_id=camera.user_id,
                                     camera_id=cam_id,
                                     plate_normalized=plate or f"{veh_type}:{veh_color}",
+                                    vehicle_type=veh_type,
+                                    vehicle_color=veh_color,
                                     confidence=confidence,
                                     is_threat=is_threat,
                                 )
@@ -240,11 +267,21 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
 
                             # Alerte si blacklisté
                             if is_threat:
-                                label = (matched_rule.alert_label or "Véhicule Suspect").strip()
+                                label = (
+                                    matched_rule.alert_label or "Véhicule Suspect"
+                                ).strip()
                                 priority = matched_rule.alert_priority or "normal"
-                                priority_icon = {"critical": "🔴", "high": "🟠", "normal": "🟡"}.get(priority, "🟡")
+                                priority_icon = {
+                                    "critical": "🔴",
+                                    "high": "🟠",
+                                    "normal": "🟡",
+                                }.get(priority, "🟡")
 
-                                plate_line = f"Plaque: {plate}" if plate else f"Type: {veh_type} | Couleur: {veh_color}"
+                                plate_line = (
+                                    f"Plaque: {plate}"
+                                    if plate
+                                    else f"Type: {veh_type} | Couleur: {veh_color}"
+                                )
                                 alert_msg = (
                                     f"{priority_icon} ALERTE PCS {priority_icon}\n"
                                     f"{label}!\n"
@@ -275,7 +312,8 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                 # Nettoyage cache déduplique (retirer les entrées expirées)
                 now = time.time()
                 expired = [
-                    k for k, v in RECENT_DETECTIONS.items()
+                    k
+                    for k, v in RECENT_DETECTIONS.items()
                     if now - v > DEDUP_WINDOW * 2
                 ]
                 for k in expired:
