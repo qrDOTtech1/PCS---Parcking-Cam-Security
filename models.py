@@ -86,6 +86,18 @@ class NotificationTarget(db.Model):
     is_active = db.Column(db.Boolean, default=True)
 
 
+class PlateDetection(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    camera_id = db.Column(db.Integer, db.ForeignKey("camera.id"), nullable=False)
+    plate_normalized = db.Column(db.String(20), nullable=False)
+    confidence = db.Column(db.Float, nullable=True)
+    detected_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_threat = db.Column(db.Boolean, default=False)
+
+    camera = db.relationship("Camera", backref="detections")
+
+
 class SystemConfig(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)

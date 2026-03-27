@@ -79,10 +79,6 @@ limiter = Limiter(
     storage_uri="memory://",
 )
 
-PLATE_RECOGNIZER_URL = os.environ.get(
-    "PLATE_RECOGNIZER_URL", "https://api.platerecognizer.com/v1/plate-reader"
-)
-
 # Décorateur pour vérifier l'authentification
 def require_auth(f):
     @wraps(f)
@@ -101,14 +97,6 @@ def require_admin_auth(f):
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
         return f(*args, **kwargs)
     return decorated_function
-
-def get_plate_recognizer_token(user_id):
-    config = SystemConfig.query.filter_by(
-        user_id=user_id, key_name="plate_recognizer_token"
-    ).first()
-    if config and config.key_value:
-        return config.key_value
-    return "YOUR_TOKEN_HERE"
 
 
 def normalize_plate(plate_str):
@@ -182,6 +170,10 @@ def create_tables():
             pass
         conn.commit()
 
+    # Démarrer le worker ANPR (une seule fois, au premier request)
+    from anpr_worker import start_anpr_worker
+    start_anpr_worker(app, socketio, LATEST_FRAMES, send_alert)
+
 
 @app.route("/upload", methods=["POST"])
 @limiter.limit("20 per minute")
@@ -206,53 +198,23 @@ def upload_image():
         return jsonify({"status": "error", "message": "No selected file"}), 400
 
     if file:
+        import eventlet
+        from anpr_engine import ANPREngine
+
         image_bytes = file.read()
-        token = get_plate_recognizer_token(user_id)
         force_plate = request.form.get("force_plate")
 
         try:
-            from PIL import Image
-
-            img = Image.open(io.BytesIO(image_bytes))
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-            elif img.mode == "RGBA":
-                img = img.convert("RGB")
-            buffer = io.BytesIO()
-            img.save(buffer, format="JPEG", quality=85)
-            buffer.seek(0)
-            image_bytes = buffer.getvalue()
-            logger.info(f"[OCR] Image converted to JPEG: {len(image_bytes)} bytes")
-        except ImportError:
-            logger.warning("[OCR] Pillow not installed, using raw bytes")
-        except Exception as e:
-            logger.error(f"[OCR] Image conversion error: {e}, using original bytes")
-
-        files = {"upload": ("image.jpg", io.BytesIO(image_bytes), "image/jpeg")}
-        headers = {"Authorization": f"Token {token}"}
-
-        try:
             if force_plate:
-                data = {"results": [{"plate": force_plate}]}
-                time.sleep(0.5)
-            elif token == "YOUR_TOKEN_HERE" or not token:
-                simulated_plate = random.choice(["AB123CD", "XX999YY", None])
-                data = (
-                    {"results": [{"plate": simulated_plate}]}
-                    if simulated_plate
-                    else {"results": []}
-                )
-                time.sleep(0.5)
+                # Mode test : forcer une plaque
+                detections = [{"plate": normalize_plate(force_plate), "confidence": 1.0}]
             else:
-                response = requests.post(
-                    PLATE_RECOGNIZER_URL, files=files, headers=headers
-                )
-                response.raise_for_status()
-                data = response.json()
+                engine = ANPREngine.get_instance()
+                detections = eventlet.tpool.execute(engine.detect_plates, image_bytes)
 
-            if data["results"]:
-                plate_read = data["results"][0]["plate"]
-                normalized_read = normalize_plate(plate_read)
+            if detections:
+                best = detections[0]
+                normalized_read = best["plate"]
 
                 blacklisted = Blacklist.query.filter_by(
                     user_id=user_id, plate_normalized=normalized_read
@@ -282,9 +244,9 @@ def upload_image():
                     {"status": "success", "plate": None, "threat": False}
                 ), 200
 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Plate recognition error: {e}")
-            return jsonify({"status": "error", "message": "External API Error"}), 502
+        except Exception as e:
+            logger.error(f"[ANPR] Detection error: {e}")
+            return jsonify({"status": "error", "message": "ANPR engine error"}), 500
 
     return jsonify({"status": "error", "message": "Unknown error"}), 500
 
@@ -790,15 +752,6 @@ def api_admin_users():
         db.session.add(new_user)
         db.session.commit()
 
-        db.session.add(
-            SystemConfig(
-                user_id=new_user.id,
-                key_name="plate_recognizer_token",
-                key_value="YOUR_TOKEN_HERE",
-            )
-        )
-        db.session.commit()
-
         return jsonify(
             {"status": "success", "message": f"User '{username}' created"}
         ), 201
@@ -896,8 +849,6 @@ def dashboard():
     cameras = Camera.query.filter_by(user_id=user_id).all()
     targets = NotificationTarget.query.filter_by(user_id=user_id).all()
     blacklist = Blacklist.query.filter_by(user_id=user_id).all()
-    pr_token = get_plate_recognizer_token(user_id)
-
     now = datetime.utcnow()
     for cam in cameras:
         cam.is_online = (
@@ -910,7 +861,6 @@ def dashboard():
         cameras=cameras,
         targets=targets,
         blacklist=blacklist,
-        pr_token=pr_token,
     )
 
 
@@ -937,23 +887,7 @@ def camera_view(camera_id):
 @app.route("/dashboard/update_config", methods=["POST"])
 @require_auth
 def update_config():
-    user_id = session["user_id"]
-
-    token = request.form.get("pr_token")
-    if token:
-        config = SystemConfig.query.filter_by(
-            user_id=user_id, key_name="plate_recognizer_token"
-        ).first()
-        if config:
-            config.key_value = token
-        else:
-            db.session.add(
-                SystemConfig(
-                    user_id=user_id, key_name="plate_recognizer_token", key_value=token
-                )
-            )
-        db.session.commit()
-        flash("Configuration mise à jour.", "success")
+    flash("Configuration mise à jour.", "success")
     return redirect(url_for("dashboard"))
 
 

@@ -10,3 +10,8 @@ python-engineio==4.8.0
 eventlet==0.33.3
 Pillow>=10.0.0
 PyMySQL>=1.1.0
+# ANPR local (YOLOv11 + EasyOCR)
+ultralytics>=8.3.0
+opencv-python-headless>=4.8.0
+easyocr>=1.7.0
+numpy>=1.24.0
