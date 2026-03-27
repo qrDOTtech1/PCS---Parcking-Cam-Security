@@ -200,6 +200,18 @@ def create_tables():
             conn.execute(text("ALTER TABLE blacklist ADD COLUMN match_plate INTEGER DEFAULT 1"))
         except:
             pass
+        try:
+            conn.execute(text("ALTER TABLE user ADD COLUMN max_blacklist INTEGER DEFAULT 50"))
+        except:
+            pass
+        try:
+            conn.execute(text("ALTER TABLE user ADD COLUMN features_json TEXT DEFAULT '[]'"))
+        except:
+            pass
+        try:
+            conn.execute(text("ALTER TABLE user ADD COLUMN admin_notes TEXT DEFAULT ''"))
+        except:
+            pass
         conn.commit()
 
     # Démarrer le worker ANPR (une seule fois, au premier request)
@@ -762,6 +774,9 @@ def api_admin_users():
                 else "Unlimited",
                 "subscription_mode": getattr(u, "subscription_mode", "standard") or "standard",
                 "max_cameras": getattr(u, "max_cameras", 3) or 3,
+                "max_blacklist": getattr(u, "max_blacklist", 50) if getattr(u, "max_blacklist", 50) is not None else 50,
+                "features": json.loads(getattr(u, "features_json", "[]") or "[]"),
+                "admin_notes": getattr(u, "admin_notes", "") or "",
             }
             for u in users
         ]
@@ -816,9 +831,12 @@ def api_admin_user_sub(username):
         return jsonify({"status": "error", "message": "User not found"}), 404
 
     data = request.json or {}
-    days = data.get("days", 30)
+    days = data.get("days", 0)
     mode = data.get("mode")
     max_cameras = data.get("max_cameras")
+    max_blacklist = data.get("max_blacklist")
+    features = data.get("features")
+    admin_notes = data.get("admin_notes")
 
     if days:
         if not user.subscription_end or user.subscription_end < datetime.utcnow():
@@ -830,6 +848,12 @@ def api_admin_user_sub(username):
         user.subscription_mode = mode
     if max_cameras is not None:
         user.max_cameras = int(max_cameras)
+    if max_blacklist is not None:
+        user.max_blacklist = int(max_blacklist)
+    if features is not None:
+        user.features_json = json.dumps(features)
+    if admin_notes is not None:
+        user.admin_notes = admin_notes
 
     db.session.commit()
 
@@ -839,7 +863,11 @@ def api_admin_user_sub(username):
     if mode:
         msg_parts.append(f"Mode: {mode}")
     if max_cameras is not None:
-        msg_parts.append(f"Max cameras: {max_cameras}")
+        msg_parts.append(f"Max cam: {max_cameras}")
+    if max_blacklist is not None:
+        msg_parts.append(f"Max rules: {max_blacklist if max_blacklist != -1 else '∞'}")
+    if features is not None:
+        msg_parts.append(f"Features: {len(features)}")
 
     return jsonify(
         {

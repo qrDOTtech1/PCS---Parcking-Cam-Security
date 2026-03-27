@@ -13,6 +13,9 @@ class User(db.Model):
     subscription_end = db.Column(db.DateTime, nullable=True)
     subscription_mode = db.Column(db.String(30), default="standard")
     max_cameras = db.Column(db.Integer, default=3)
+    max_blacklist = db.Column(db.Integer, default=50)       # -1 = unlimited
+    features_json = db.Column(db.Text, default="[]")        # JSON list of enabled features
+    admin_notes = db.Column(db.Text, default="")
 
     cameras = db.relationship(
         "Camera", backref="owner", lazy=True, cascade="all, delete-orphan"
