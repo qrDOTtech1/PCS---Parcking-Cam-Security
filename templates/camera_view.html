@@ -62,15 +62,13 @@
                     <!-- Video feed -->
                     <div class="relative bg-gray-900 aspect-video">
                         {% if camera.is_online %}
-                        <img id="liveStream"
-                            src="{{ url_for('video_feed', camera_id=camera.id) }}"
+                        <img src="/mjpeg_stream/{{ camera.id }}"
                             alt="Live stream"
                             class="w-full h-full object-contain">
                         <div class="absolute top-3 right-3 flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow">
                             <span class="w-1.5 h-1.5 rounded-full bg-white pulse inline-block"></span>
                             LIVE
                         </div>
-                        <div id="fpsCounter" class="absolute bottom-3 right-3 bg-black/50 text-white text-xs px-2 py-0.5 rounded font-mono"></div>
                         {% else %}
                         <div class="w-full h-full flex items-center justify-center text-gray-500">
                             <div class="text-center">
