@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>СЛЕДИ (SLEDI) - Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .camera-card { transition: transform 0.2s, box-shadow 0.2s; }
+        .camera-card:hover { transform: translateY(-4px); box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
+        .stream-indicator { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .status-online { background-color: #22c55e; animation: pulse 2s infinite; }
+        .status-offline { background-color: #94a3b8; }
+        #map { height: 300px; width: 100%; border-radius: 0.5rem; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <nav class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center gap-4">
+                    <span class="text-2xl font-extrabold text-blue-600 tracking-tight">СЛЕДИ</span>
+                    <span class="px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-sm font-medium border border-blue-100">
+                        {{ username }}
+                    </span>
+                </div>
+                <div class="flex items-center gap-4">
+                    <a href="{{ url_for('logout') }}" class="text-sm font-medium text-gray-500 hover:text-red-600 transition">
+                        Logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="mb-6 space-y-2">
+            {% for category, message in messages %}
+              <div class="p-4 rounded-lg shadow-sm text-sm font-medium flex items-center {% if category == 'error' %}bg-red-50 text-red-700 border border-red-200{% else %}bg-green-50 text-green-700 border border-green-200{% endif %}">
+                  {{ message }}
+              </div>
+            {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        <div class="mb-6 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-gray-900">My Cameras / Мои камеры</h1>
+            <button onclick="openAddCameraModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition shadow-sm flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                Add Camera / Добавить камеру
+            </button>
+        </div>
+
+        {% if cameras %}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+            {% for cam in cameras %}
+            <div class="camera-card bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" data-camera-id="{{ cam.id }}">
+                <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <div class="flex items-center gap-3">
+                        <div class="status-dot {% if cam.is_online %}status-online{% else %}status-offline{% endif %}"></div>
+                        <span class="font-bold text-gray-800">{{ cam.name }}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded">{{ cam.api_key[:12] }}...</span>
+                        <form method="POST" action="{{ url_for('del_camera', id=cam.id) }}" class="inline" onsubmit="return confirm('Delete this camera?');">
+                            <button type="submit" class="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50" title="Delete">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                </svg>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="aspect-video bg-gray-900 relative overflow-hidden">
+                    {% if cam.is_online %}
+                    <img id="thumb_{{ cam.id }}" src="{{ url_for('video_feed', camera_id=cam.id) }}" alt="Stream" class="w-full h-full object-cover">
+                    <div class="absolute top-2 right-2 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded">LIVE</div>
+                    {% else %}
+                    <div class="w-full h-full flex items-center justify-center text-gray-500">
+                        <div class="text-center">
+                            <svg class="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                            <span class="text-sm">Offline / Не в сети</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <div class="p-4 flex justify-between items-center">
+                    <div class="text-xs text-gray-500">
+                        {% if cam.lat %}GPS: {{ cam.lat|round(4) }}, {{ cam.lng|round(4) }}{% else %}No GPS / Нет GPS{% endif %}
+                    </div>
+                    <a href="{{ url_for('camera_view', camera_id=cam.id) }}" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition text-sm">
+                        View / Подробнее
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-16 bg-white rounded-xl border border-dashed border-gray-300">
+            <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+            </svg>
+            <h3 class="text-lg font-medium text-gray-900 mb-2">No cameras registered / Нет зарегистрированных камер</h3>
+            <p class="text-gray-500 mb-4">Configure your ESP32-CAM and add it here / Настройте вашу ESP32-CAM и добавьте её здесь</p>
+            <button onclick="openAddCameraModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition">
+                Add my first camera / Добавить первую камеру
+            </button>
+        </div>
+        {% endif %}
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+                    <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                        </svg>
+                        Threat Database / База угроз
+                    </h2>
+                </div>
+                <div class="p-6">
+                    {% if blacklist %}
+                    <div class="overflow-x-auto mb-4">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Plate / Номер</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description / Описание</th>
+                                    <th class="px-4 py-3"></th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                                {% for bl in blacklist %}
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm font-bold text-red-600 font-mono">{{ bl.plate_normalized }}</td>
+                                    <td class="px-4 py-3 text-sm text-gray-700">{{ bl.description }}</td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-right">
+                                        <form method="POST" action="{{ url_for('del_blacklist', id=bl.id) }}" class="inline">
+                                            <button type="submit" class="text-red-500 hover:text-red-700 text-sm font-medium">Delete</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-center text-gray-500 py-4">No plates in blacklist / Нет номеров в чёрном списке</p>
+                    {% endif %}
+
+                    <hr class="my-4 border-gray-100">
+                    <form method="POST" action="{{ url_for('add_blacklist') }}" class="flex gap-3 items-end">
+                        <div class="flex-1">
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Plate / Номер</label>
+                            <input type="text" name="plate" placeholder="AB123CD" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm font-mono uppercase">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Description / Описание</label>
+                            <input type="text" name="desc" placeholder="Reason..." class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm">
+                        </div>
+                        <button type="submit" class="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition text-sm">
+                            Add / Добавить
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+                    <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                        </svg>
+                        OCR Configuration / Настройка OCR
+                    </h2>
+                </div>
+                <div class="p-6">
+                    <p class="text-sm text-gray-600 mb-4">Plate Recognizer API token for automatic number plate recognition.</p>
+                    <form method="POST" action="{{ url_for('update_config') }}">
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Plate Recognizer Token</label>
+                        <input type="text" name="pr_token" value="{{ pr_token }}" placeholder="YOUR_TOKEN_HERE" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-mono mb-4">
+                        <button type="submit" class="w-full bg-gray-800 hover:bg-gray-900 text-white font-medium py-2 px-4 rounded-lg transition text-sm">
+                            Save / Сохранить
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-8 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+                <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                    Cameras Map / Карта камер
+                </h2>
+                <p class="text-sm text-gray-500 mt-1">Click on map to position a camera, or use form below / Кликните на карту чтобы позиционировать камеру</p>
+            </div>
+            <div class="p-6">
+                <div id="map" class="mb-4 cursor-crosshair"></div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                    {% for cam in cameras %}
+                    <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="font-bold text-gray-800">{{ cam.name }}</span>
+                            {% if cam.lat and cam.lng %}
+                            <span class="text-xs text-green-600">Positioned / Позиционирована</span>
+                            {% else %}
+                            <span class="text-xs text-orange-500">Not positioned / Не позиционирована</span>
+                            {% endif %}
+                        </div>
+                        <form action="/dashboard/update_camera_gps/{{ cam.id }}" method="POST" class="flex gap-2 items-end">
+                            <div class="flex-1">
+                                <label class="block text-xs text-gray-500 mb-1">Latitude</label>
+                                <input type="text" name="lat" value="{{ cam.lat or '' }}" placeholder="48.8566" class="w-full px-2 py-1 border rounded text-sm font-mono">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-xs text-gray-500 mb-1">Longitude</label>
+                                <input type="text" name="lng" value="{{ cam.lng or '' }}" placeholder="2.3522" class="w-full px-2 py-1 border rounded text-sm font-mono">
+                            </div>
+                            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm">
+                                Save
+                            </button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="addCameraModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <h3 class="font-bold text-gray-900">Add Camera / Добавить камеру</h3>
+                <button onclick="closeAddCameraModal()" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></svg>
+                    </svg>
+                </button>
+            </div>
+            <form method="POST" action="{{ url_for('add_camera') }}" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Camera Name / Название камеры</label>
+                    <input type="text" name="name" placeholder="Front Gate" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">API Key (from ESP32) / API ключ</label>
+                    <input type="text" name="api_key" placeholder="cam_001" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono">
+                    <p class="text-xs text-gray-500 mt-1">This key must match the one configured in your ESP32</p>
+                </div>
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition">
+                    Create Camera / Создать камеру
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function openAddCameraModal() {
+            document.getElementById('addCameraModal').classList.remove('hidden');
+            document.getElementById('addCameraModal').classList.add('flex');
+        }
+        
+        function closeAddCameraModal() {
+            document.getElementById('addCameraModal').classList.add('hidden');
+            document.getElementById('addCameraModal').classList.remove('flex');
+        }
+
+        var map = L.map('map').setView([48.8566, 2.3522], 5);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO',
+            maxZoom: 19
+        }).addTo(map);
+
+        var cameraMarkers = {};
+        var bounds = [];
+        
+        {% for cam in cameras %}
+            {% if cam.lat and cam.lng %}
+                cameraMarkers[{{ cam.id }}] = L.marker([{{ cam.lat }}, {{ cam.lng }}]).addTo(map);
+                cameraMarkers[{{ cam.id }}].bindPopup("<b>{{ cam.name }}</b><br>Lat: {{ cam.lat }}<br>Lng: {{ cam.lng }}");
+                bounds.push([{{ cam.lat }}, {{ cam.lng }}]);
+            {% endif %}
+        {% endfor %}
+        
+        if (bounds.length > 0) { map.fitBounds(bounds); }
+
+        map.on('click', function(e) {
+            var lat = e.latlng.lat.toFixed(6);
+            var lng = e.latlng.lng.toFixed(6);
+            
+            var camId = prompt('Position clicked!\n\nEnter camera ID to position:\n(Lat: ' + lat + ', Lng: ' + lng + ')\n\nAvailable IDs: {% for cam in cameras %}{{ cam.id }}{% if not loop.last %}, {% endif %}{% endfor %}');
+            
+            if (camId) {
+                fetch('/dashboard/update_camera_gps/' + camId, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'lat=' + lat + '&lng=' + lng
+                }).then(response => {
+                    if (response.ok) {
+                        location.reload();
+                    }
+                });
+            }
+        });
+
+        const socket = io();
+        {% for cam in cameras %}
+        socket.on('frame_update', function(data) {
+            if (data.camera_id === {{ cam.id }}) {
+                const img = document.getElementById('thumb_{{ cam.id }}');
+                if (img) {
+                    img.src = '/video_feed/' + {{ cam.id }} + '?t=' + new Date().getTime();
+                }
+            }
+        });
+        {% endfor %}
+
+        socket.on('threat_alert', function(data) {
+            if (confirm('THREAT ALERT!\nPlate: ' + data.plate + '\nCamera: ' + data.camera_name + '\n\nView details?')) {
+                window.location.href = '/camera/' + data.camera_id;
+            }
+        });
+
+        setInterval(() => {
+            {% for cam in cameras %}
+            const img{{ cam.id }} = document.getElementById('thumb_{{ cam.id }}');
+            if (img{{ cam.id }}) {
+                img{{ cam.id }}.src = '/video_feed/{{ cam.id }}?t=' + new Date().getTime();
+            }
+            {% endfor %}
+        }, 500);
+    </script>
+</body>
+</html>

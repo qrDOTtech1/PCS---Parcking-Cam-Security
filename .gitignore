@@ -1,0 +1,33 @@
+# Secrets & config local
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Database
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# Test / dev artifacts
+test_stream.avi
+*.avi
+*.mp4
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Claude memory (local only)
+memory/
+
+# OS
+.DS_Store
+Thumbs.db

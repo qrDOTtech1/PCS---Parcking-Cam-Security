@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Flask Server (app.py)",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["app.py"],
+      "port": 5000
+    },
+    {
+      "name": "Webcam Tester / ESP32 Simulator",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["webcam_tester.py"],
+      "port": 0
+    },
+    {
+      "name": "Stream Tester",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["stream_tester.py"],
+      "port": 0
+    },
+    {
+      "name": "Admin Tools",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["admin_tools.py"],
+      "port": 0
+    }
+  ]
+}
