@@ -1,122 +1,239 @@
-# ParkingCamSecurity (PCS) - Server v2.0
+# ParkingCamSecurity (PCS)
 
-## Installation
+**Système de vidéosurveillance de parkings — ESP32-CAM, webcam, smartphone ou toute caméra IP.**
+
+> Stream live · Reconnaissance de plaques (OCR) · Enregistrement SD 24h · Alertes blacklist · Déployable sur Railway en 1 clic
+
+---
+
+## Aperçu
+
+PCS est une plateforme web Flask qui centralise plusieurs caméras de surveillance dans un seul dashboard.
+Chaque caméra envoie ses frames en HTTP (multipart POST) — qu'il s'agisse d'un ESP32-CAM, d'un téléphone, d'une webcam ou de n'importe quel appareil supportant le firmware fourni.
+
+```
+[ESP32-CAM]  ──┐
+[Téléphone]  ──┤──► /stream_upload ──► Dashboard live
+[Webcam PC]  ──┘         │
+                          └──► OCR Plate Recognizer ──► Alerte blacklist
+```
+
+---
+
+## Fonctionnalités
+
+| Fonctionnalité | Description |
+|---|---|
+| **Dashboard live** | Vignettes toutes caméras, polling 500 ms |
+| **Camera view** | Flux MJPEG continu (vrai stream, pas de polling) |
+| **Camera setup** | Page `/setup` — utiliser téléphone/webcam sans connexion |
+| **Reconnaissance plaques** | Intégration Plate Recognizer API (OCR) |
+| **Blacklist** | Alertes temps réel via Socket.IO si plaque connue |
+| **Carte GPS** | Positionnement caméras sur carte Leaflet |
+| **Enregistrement SD** | Firmware ESP32 — 24h en fichiers horaires, lecture/DL depuis le navigateur |
+| **Déploiement Railway** | Procfile + Dockerfile prêts, SQLite ou MySQL |
+
+---
+
+## Démarrage rapide
+
+### 1. Variables d'environnement
+
+| Variable | Description | Défaut |
+|---|---|---|
+| `FLASK_SECRET_KEY` | Clé secrète Flask | `parkingcam-secret-key-change-in-prod` |
+| `MASTER_KEY` | Clé admin pour créer des comptes | `master_key_pcs_2024` |
+| `DATABASE_URL` | URI SQLAlchemy | `sqlite:///parkingcam.db` |
+
+> **Railway** : ajouter ces variables dans *Settings → Variables*.
+> Pour SQLite persistant sur Railway, monter un volume sur `/app/data` et mettre `DATABASE_URL=sqlite:////app/data/parkingcam.db`.
+
+### 2. Lancer en local
 
 ```bash
 pip install -r requirements.txt
-```
-
-## Configuration
-
-Copie `.env.example` en `.env` et remplis les valeurs :
-```bash
-FLASK_SECRET_KEY=une-cle-secrete-longue-et-unique
-MASTER_KEY=ta-master-key-admin
-DATABASE_URL=sqlite:///parkingcam.db
-SERVER_URL=https://ton-app.railway.app
-```
-
-## Lancer le serveur
-
-```bash
 python app.py
 ```
 
-## Endpoints API
+### 3. Déployer sur Railway
 
-### Authentification
-| Endpoint | Méthode | Description |
-|----------|---------|-------------|
-| `/login` | GET/POST | Connexion utilisateur |
-| `/logout` | GET | Déconnexion |
-| `/dashboard` | GET | Interface utilisateur |
+1. Fork ou push ce repo sur GitHub
+2. Nouveau projet Railway → *Deploy from GitHub repo*
+3. Ajouter les variables d'environnement ci-dessus
+4. *(Optionnel)* Ajouter un plugin **Volume** monté sur `/app/data` pour persister la DB
 
-### Caméra ESP32
-| Endpoint | Méthode | Description |
-|----------|---------|-------------|
-| `/ping` | GET | Heartbeat + reception config |
-| `/stream_upload` | POST | Reception frames continues |
-| `/upload` | POST | Analyse OCR d'une image |
+---
 
-### API Caméra (config)
-| Endpoint | Méthode | Description |
-|----------|---------|-------------|
-| `/api/camera/config/<key>` | GET | Lire config caméra |
-| `/api/camera/config/<key>` | POST | Écrire config caméra |
-| `/api/camera/recording/<key>` | POST | Start/Stop recording |
-| `/api/camera/fragments/<key>` | GET | Liste fragments vidéo |
-| `/api/camera/download/<key>` | GET | Demander download 15min |
+## Ajouter une caméra
 
-### WebSocket Events
-| Event | Direction | Description |
-|-------|-----------|-------------|
-| `esp32_register` | ESP32 → Server | Inscription ESP32 |
-| `client_watch` | Client → Server | Client regarde stream |
-| `config_update` | Server → ESP32 | Push nouvelle config |
-| `threat_alert` | Server → Client | Alerte plaque |
+### Option A — ESP32-CAM (matériel)
 
-## Base de données
+Flasher `esp32cam/PCS_ESP32CAM.ino` via Arduino IDE.
+Au premier démarrage (ou GPIO 13 appuyé) → AP WiFi **PCS-Config** → ouvrir **http://192.168.4.1** → remplir SSID, mot de passe, Camera ID, URL serveur.
 
-SQLite : `parkingcam.db`
+### Option B — Téléphone / Webcam (navigateur)
 
-### Tables
+1. Ouvrir `https://<votre-serveur>/setup`
+2. Choisir la caméra du device, définir un Camera ID
+3. Cliquer **Start streaming** — le flux part immédiatement
+4. Se connecter au dashboard → **Add Camera** → saisir le même ID comme API Key
 
-- **User** : Utilisateurs (auth, subscription)
-- **Camera** : Caméras (name, api_key, config_json, etc.)
-- **Blacklist** : Plaques suspectes
-- **NotificationTarget** : Canaux Signal/Telegram
-- **SystemConfig** : Configs système (Plate Recognizer token)
+### Option C — Script Python (test / CI)
 
-## Structure des fichiers
+```bash
+python webcam_tester.py --url https://<serveur> --key mon-camera-id
+```
+
+---
+
+## Structure du projet
 
 ```
 ParkingCamSecurity/
-├── app.py              # Application Flask principale
-├── models.py           # Modèles SQLAlchemy
-├── requirements.txt    # Dépendances Python
-├── .env.example        # Template de configuration
-├── Dockerfile          # Déploiement Docker
-├── admin_tools.py      # Outil admin desktop
-├── webcam_tester.py    # Simulateur ESP32 pour test
-├── stream_tester.py    # Test de flux vidéo
-├── esp32_tracker.ino   # Firmware ESP32
+│
+├── app.py                  # Application Flask + Socket.IO + routes API
+├── models.py               # Modèles SQLAlchemy (User, Camera, Blacklist…)
+├── requirements.txt        # Dépendances Python
+├── Procfile                # gunicorn eventlet (Railway / Heroku)
+├── Dockerfile              # Image Docker
+│
+├── esp32cam/
+│   └── PCS_ESP32CAM.ino   # Firmware ESP32-CAM complet
+│       ├── Config web (WiFi, ID, rotation, qualité)
+│       ├── Stream HTTP vers PCS
+│       ├── Enregistrement SD horaire (24h)
+│       └── Lecture / téléchargement fragments
+│
 ├── templates/
-│   ├── login.html      # Page login
-│   ├── dashboard.html  # Vue grille caméras
-│   └── camera_view.html # Vue détaillée caméra
-├── deploy/
-│   ├── hetzner/        # Guide déploiement Hetzner
-│   └── railway/        # Guide déploiement Railway
-└── static/
-    ├── css/
-    └── js/
+│   ├── login.html          # Page de connexion + bouton "Create a Camera"
+│   ├── dashboard.html      # Grille caméras live + blacklist + carte GPS
+│   ├── camera_view.html    # Vue MJPEG plein écran + sidebar caméras
+│   ├── camera_setup.html   # Setup caméra sans connexion (/setup)
+│   └── terms.html          # CGU bilingues EN/FR
+│
+├── static/
+│   └── img/
+│       └── PCS_wordmark_logo.svg
+│
+├── webcam_tester.py        # Simulateur ESP32 (webcam PC → serveur)
+├── stream_tester.py        # Test flux vidéo
+└── admin_tools.py          # Outils admin
 ```
 
-## WebSocket (Socket.IO)
+---
 
-Le serveur utilise Flask-SocketIO pour les communications temps réel :
-- Push config vers ESP32
-- Alertes vers dashboard
-- Mise à jour frame en temps réel
+## API Endpoints
+
+### Authentification & UI
+
+| Endpoint | Méthode | Auth | Description |
+|---|---|---|---|
+| `/login` | GET/POST | — | Connexion |
+| `/logout` | GET | session | Déconnexion |
+| `/dashboard` | GET | session | Interface principale |
+| `/camera/<id>` | GET | session | Vue MJPEG caméra |
+| `/setup` | GET | — | Setup caméra (sans connexion) |
+| `/terms` | GET | — | Conditions d'utilisation |
+
+### API Caméra (firmware / scripts)
+
+| Endpoint | Méthode | Auth | Description |
+|---|---|---|---|
+| `/stream_upload` | POST | `X-API-Key` header | Envoyer une frame JPEG |
+| `/ping` | GET | `X-API-Key` header | Heartbeat + récupérer config |
+| `/upload` | POST | `X-API-Key` header | Analyse OCR plaque |
+| `/public_stream/<id>` | POST | — | Stream pré-enregistrement (navigateur) |
+
+### Flux vidéo
+
+| Endpoint | Auth | Description |
+|---|---|---|
+| `/video_feed/<id>` | session | Dernière frame JPEG |
+| `/mjpeg_stream/<id>` | session | Flux MJPEG continu (multipart) |
+
+### Dashboard (POST)
+
+| Endpoint | Description |
+|---|---|
+| `/dashboard/add_camera` | Enregistrer une caméra (name + api_key) |
+| `/dashboard/del_camera/<id>` | Supprimer une caméra |
+| `/dashboard/add_blacklist` | Ajouter une plaque à la blacklist |
+| `/dashboard/update_camera_gps/<id>` | Mettre à jour position GPS |
+| `/dashboard/update_config` | Sauvegarder token Plate Recognizer |
+
+---
+
+## Firmware ESP32-CAM
+
+**Fichier** : `esp32cam/PCS_ESP32CAM.ino`
+**Matériel** : AI Thinker ESP32-CAM (OV2640) + carte SD 16 Go minimum
+
+### Modes de démarrage
+
+| Mode | Condition | Accès |
+|---|---|---|
+| **Config AP** | GPIO 13 appuyé au boot, ou aucun SSID configuré | WiFi `PCS-Config` → http://192.168.4.1 |
+| **Normal** | SSID configuré | http://`<IP locale>`/ |
+
+### Page de configuration (`/`)
+
+- SSID + mot de passe WiFi *(réseaux cachés supportés — entrer le nom exact)*
+- Camera ID = API Key PCS
+- URL du serveur
+- Rotation : Normal / 180° / Miroir H / Miroir V
+- Qualité JPEG + FPS envoyés au serveur
+
+### Enregistrement SD
+
+| Qualité | Débit estimé | Stockage / 24h |
+|---|---|---|
+| Haute (8) | ~160 KB/s | ~14 Go |
+| Normale (12) | ~100 KB/s | ~9 Go |
+| Économe (20) | ~50 KB/s | ~4 Go |
+
+- Fichiers horaires : `/rec/YYYY-MM-DD_HH.pcs`
+- Format : séquence de `[uint32 taille][JPEG]`
+- Purge automatique des fichiers > 24h
+
+### Interface enregistrements (`/recordings`)
+
+- Liste des fichiers par heure
+- **Play** : lecture MJPEG directement dans le navigateur
+- **Télécharger** : fichier brut
+
+### Librairies requises
+
+Uniquement le **core ESP32 Arduino** (Espressif) — aucune lib externe.
+Installer via Arduino IDE : *Boards Manager → ESP32 by Espressif Systems*
+
+---
 
 ## Sécurité
 
-- API Keys uniques par caméra
-- Sessions Flask pour utilisateurs
-- Rate limiting (Flask-Limiter)
-- Password hashing (Werkzeug)
+- Sessions Flask + CSRF implicite (formulaires POST uniquement)
+- Rate limiting via Flask-Limiter (20 req/min sur `/login`)
+- Hachage des mots de passe (Werkzeug PBKDF2)
+- API Keys par caméra — aucune donnée sensible en clair
+- Pas de traversal de chemin sur le serveur de fragments SD
 
-## Plate Recognizer (OCR)
+---
 
-Pour activer la reconnaissance de plaques :
-1. Crée un compte sur https://api.platerecognizer.com
-2. Ajoute ton token dans Configuration AI Engine du dashboard
-3. Le système analysera automatiquement les plaques détectées
+## Reconnaissance de plaques (OCR)
 
-## Déploiement
+1. Créer un compte sur [platerecognizer.com](https://platerecognizer.com)
+2. Dashboard PCS → **OCR Configuration** → coller le token
+3. Le système analyse automatiquement chaque frame et alerte si la plaque figure dans la blacklist
 
-Voir `deploy/railway/DEPLOY.md` pour Railway ou `deploy/hetzner/DEPLOY.md` pour Hetzner.
+---
+
+## Conditions d'utilisation
+
+L'utilisation de PCS est soumise aux [Conditions d'utilisation](/terms) disponibles sur la plateforme.
+Les développeurs déclinent toute responsabilité pour toute utilisation illicite ou non conforme aux lois applicables en matière de vidéosurveillance et de protection des données.
+
+---
 
 ## Licence
 
-ParkingCamSecurity (PCS) - Open Source
+ParkingCamSecurity — Open Source
+© 2024 — [contact@parkingcamsecurity.com](mailto:contact@parkingcamsecurity.com)
