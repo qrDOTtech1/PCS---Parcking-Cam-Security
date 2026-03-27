@@ -193,6 +193,12 @@ def create_tables():
             pass
         try:
             conn.execute(
+                text("ALTER TABLE camera ADD COLUMN address VARCHAR(200) DEFAULT ''")
+            )
+        except:
+            pass
+        try:
+            conn.execute(
                 text(
                     "ALTER TABLE user ADD COLUMN subscription_mode VARCHAR(30) DEFAULT 'standard'"
                 )
