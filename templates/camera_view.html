@@ -126,31 +126,13 @@
     </main>
 
     <script>
-        {% if camera.is_online %}
-        const mainImg = document.getElementById('liveStream');
-        const fpsEl = document.getElementById('fpsCounter');
-        let frameCount = 0;
-        let lastFpsTime = Date.now();
-
-        setInterval(() => {
-            mainImg.src = '/video_feed/{{ camera.id }}?t=' + Date.now();
-            frameCount++;
-            const now = Date.now();
-            if (now - lastFpsTime >= 1000) {
-                fpsEl.textContent = frameCount + ' fps';
-                frameCount = 0;
-                lastFpsTime = now;
-            }
-        }, 50);
-
-        // Sidebar cameras (less aggressive — 200ms)
+        // Sidebar cameras polling (500ms — dashboard-style)
         {% for cam in cameras %}{% if cam.id != camera.id and cam.is_online %}
         const sideImg{{ cam.id }} = document.getElementById('sidebar_{{ cam.id }}');
         setInterval(() => {
             if (sideImg{{ cam.id }}) sideImg{{ cam.id }}.src = '/video_feed/{{ cam.id }}?t=' + Date.now();
-        }, 200);
+        }, 500);
         {% endif %}{% endfor %}
-        {% endif %}
     </script>
 </body>
 </html>
