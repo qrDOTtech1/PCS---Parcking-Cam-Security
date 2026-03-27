@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch()
+
 import os
 import io
 import re
@@ -64,7 +67,7 @@ db.init_app(app)
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode="threading",
+    async_mode="eventlet",
     ping_timeout=30,
     ping_interval=10,
 )
