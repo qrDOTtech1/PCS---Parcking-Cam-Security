@@ -17,6 +17,8 @@ Usage:
 
 import re
 import logging
+import eventlet
+import eventlet.tpool
 import numpy as np
 
 logger = logging.getLogger(__name__)

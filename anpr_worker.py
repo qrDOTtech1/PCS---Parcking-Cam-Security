@@ -10,6 +10,7 @@ import os
 import time
 import logging
 import eventlet
+import eventlet.tpool
 
 logger = logging.getLogger(__name__)
 

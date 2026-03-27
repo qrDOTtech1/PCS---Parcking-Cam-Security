@@ -211,6 +211,7 @@ def upload_image():
 
     if file:
         import eventlet
+        import eventlet.tpool
         from anpr_engine import ANPREngine
 
         image_bytes = file.read()
