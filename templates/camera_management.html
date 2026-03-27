@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Manage {{ camera.name }} - PCS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-800">
+    <div class="max-w-4xl mx-auto py-8 px-4">
+        <h1 class="text-2xl font-bold mb-6">Gestion Caméra : {{ camera.name }}</h1>
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h2 class="text-lg font-semibold mb-4">Statistiques (Coming Soon)</h2>
+            <p class="text-gray-600">En attente du "State of Art" pour les statistiques.</p>
+            <a href="{{ url_for('dashboard') }}" class="mt-6 inline-block bg-gray-600 text-white px-4 py-2 rounded-lg">Retour</a>
+        </div>
+    </div>
+</body>
+</html>

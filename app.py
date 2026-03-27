@@ -1,4 +1,5 @@
 import eventlet
+
 eventlet.monkey_patch()
 
 import os
@@ -33,7 +34,17 @@ from flask import (
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from models import db, User, Camera, Blacklist, NotificationTarget, SystemConfig, PlateDetection, CameraSummary, AIConfig
+from models import (
+    db,
+    User,
+    Camera,
+    Blacklist,
+    NotificationTarget,
+    SystemConfig,
+    PlateDetection,
+    CameraSummary,
+    AIConfig,
+)
 from sqlalchemy import text
 import logging
 
@@ -79,6 +90,7 @@ limiter = Limiter(
     storage_uri="memory://",
 )
 
+
 # Décorateur pour vérifier l'authentification
 def require_auth(f):
     @wraps(f)
@@ -86,7 +98,9 @@ def require_auth(f):
         if "user_id" not in session:
             return redirect(url_for("login"))
         return f(*args, **kwargs)
+
     return decorated_function
+
 
 # Décorateur pour vérifier l'authentification admin
 def require_admin_auth(f):
@@ -96,6 +110,7 @@ def require_admin_auth(f):
         if not key or key != os.environ.get("MASTER_KEY", "master_key_pcs_2024"):
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
         return f(*args, **kwargs)
+
     return decorated_function
 
 
@@ -170,13 +185,17 @@ def create_tables():
             pass
         try:
             conn.execute(
-                text("ALTER TABLE camera ADD COLUMN flash_detect_enabled INTEGER DEFAULT 1")
+                text(
+                    "ALTER TABLE camera ADD COLUMN flash_detect_enabled INTEGER DEFAULT 1"
+                )
             )
         except:
             pass
         try:
             conn.execute(
-                text("ALTER TABLE user ADD COLUMN subscription_mode VARCHAR(30) DEFAULT 'standard'")
+                text(
+                    "ALTER TABLE user ADD COLUMN subscription_mode VARCHAR(30) DEFAULT 'standard'"
+                )
             )
         except:
             pass
@@ -187,46 +206,79 @@ def create_tables():
         except:
             pass
         try:
-            conn.execute(text("ALTER TABLE blacklist ADD COLUMN vehicle_type VARCHAR(20) DEFAULT 'any'"))
+            conn.execute(
+                text(
+                    "ALTER TABLE blacklist ADD COLUMN vehicle_type VARCHAR(20) DEFAULT 'any'"
+                )
+            )
         except:
             pass
         try:
-            conn.execute(text("ALTER TABLE blacklist ADD COLUMN vehicle_color VARCHAR(20) DEFAULT 'any'"))
+            conn.execute(
+                text(
+                    "ALTER TABLE blacklist ADD COLUMN vehicle_color VARCHAR(20) DEFAULT 'any'"
+                )
+            )
         except:
             pass
         try:
-            conn.execute(text("ALTER TABLE blacklist ADD COLUMN alert_label VARCHAR(50) DEFAULT ''"))
+            conn.execute(
+                text(
+                    "ALTER TABLE blacklist ADD COLUMN alert_label VARCHAR(50) DEFAULT ''"
+                )
+            )
         except:
             pass
         try:
-            conn.execute(text("ALTER TABLE blacklist ADD COLUMN alert_priority VARCHAR(10) DEFAULT 'normal'"))
+            conn.execute(
+                text(
+                    "ALTER TABLE blacklist ADD COLUMN alert_priority VARCHAR(10) DEFAULT 'normal'"
+                )
+            )
         except:
             pass
         try:
-            conn.execute(text("ALTER TABLE blacklist ADD COLUMN match_plate INTEGER DEFAULT 1"))
+            conn.execute(
+                text("ALTER TABLE blacklist ADD COLUMN match_plate INTEGER DEFAULT 1")
+            )
         except:
             pass
         try:
-            conn.execute(text("ALTER TABLE user ADD COLUMN max_blacklist INTEGER DEFAULT 50"))
+            conn.execute(
+                text("ALTER TABLE user ADD COLUMN max_blacklist INTEGER DEFAULT 50")
+            )
         except:
             pass
         try:
-            conn.execute(text("ALTER TABLE user ADD COLUMN features_json TEXT DEFAULT '[]'"))
+            conn.execute(
+                text("ALTER TABLE user ADD COLUMN features_json TEXT DEFAULT '[]'")
+            )
         except:
             pass
         try:
-            conn.execute(text("ALTER TABLE user ADD COLUMN admin_notes TEXT DEFAULT ''"))
+            conn.execute(
+                text("ALTER TABLE user ADD COLUMN admin_notes TEXT DEFAULT ''")
+            )
         except:
             pass
         conn.commit()
 
     # Démarrer le worker ANPR (une seule fois, au premier request)
     from anpr_worker import start_anpr_worker, BLUE_FLASH_LAST
+
     start_anpr_worker(app, socketio, LATEST_FRAMES, send_alert)
 
     # Démarrer le worker de résumés (pour PCS-AI)
     from summary_worker import start_summary_worker
+
     start_summary_worker(app, LATEST_FRAMES, CAMERA_STATUS, BLUE_FLASH_LAST)
+
+
+def get_max_notifications(user):
+    # Emergency: 20, Standard: 3
+    if user.subscription_mode == "emergency":
+        return 20
+    return 3
 
 
 @app.route("/upload", methods=["POST"])
@@ -262,7 +314,9 @@ def upload_image():
         try:
             if force_plate:
                 # Mode test : forcer une plaque
-                detections = [{"plate": normalize_plate(force_plate), "confidence": 1.0}]
+                detections = [
+                    {"plate": normalize_plate(force_plate), "confidence": 1.0}
+                ]
             else:
                 engine = ANPREngine.get_instance()
                 detections = eventlet.tpool.execute(engine.detect_plates, image_bytes)
@@ -326,7 +380,6 @@ def ping():
             "recording_enabled": camera.recording_enabled,
         }
     ), 200
-
 
 
 @app.route("/public_stream/<camera_id>", methods=["POST"])
@@ -426,20 +479,20 @@ def video_feed(camera_id):
 def generate_mjpeg_stream(camera_id):
     """Générateur de flux MJPEG avec gestion de buffer"""
     import time
-    
+
     # Initialiser le flux si nécessaire
     if camera_id not in MJPEG_STREAMS:
         MJPEG_STREAMS[camera_id] = {"clients": 0, "last_frame": None}
-    
+
     MJPEG_STREAMS[camera_id]["clients"] += 1
     last_sent = b""
     frame_sequence = 0
-    
+
     try:
         while True:
             # Obtenir la dernière frame disponible
             frame = LATEST_FRAMES.get(camera_id)
-            
+
             # Envoyer la frame seulement si elle est différente de la précédente
             if frame and frame != last_sent:
                 try:
@@ -452,7 +505,7 @@ def generate_mjpeg_stream(camera_id):
                     )
                     last_sent = frame
                     frame_sequence += 1
-                    
+
                     # Mettre à jour le statut du flux
                     MJPEG_STREAMS[camera_id]["last_frame"] = datetime.utcnow()
                 except Exception as e:
@@ -460,7 +513,7 @@ def generate_mjpeg_stream(camera_id):
                     # En cas d'erreur, attendre un peu avant de réessayer
                     time.sleep(0.1)
                     continue
-            
+
             # Attendre un court instant avant de vérifier la prochaine frame
             time.sleep(0.033)  # ~30 FPS maximum
     except GeneratorExit:
@@ -505,9 +558,13 @@ def camera_status(camera_id):
 
     status = CAMERA_STATUS.get(camera_id, {"connected": False})
     buffer_size = len(FRAME_BUFFERS.get(camera_id, []))
-    
+
     # Calculer le nombre de clients connectés au flux MJPEG
-    mjpeg_clients = MJPEG_STREAMS.get(camera_id, {}).get("clients", 0) if camera_id in MJPEG_STREAMS else 0
+    mjpeg_clients = (
+        MJPEG_STREAMS.get(camera_id, {}).get("clients", 0)
+        if camera_id in MJPEG_STREAMS
+        else 0
+    )
 
     return jsonify(
         {
@@ -782,9 +839,12 @@ def api_admin_users():
                 "subscription_end": u.subscription_end.strftime("%Y-%m-%d")
                 if u.subscription_end
                 else "Unlimited",
-                "subscription_mode": getattr(u, "subscription_mode", "standard") or "standard",
+                "subscription_mode": getattr(u, "subscription_mode", "standard")
+                or "standard",
                 "max_cameras": getattr(u, "max_cameras", 3) or 3,
-                "max_blacklist": getattr(u, "max_blacklist", 50) if getattr(u, "max_blacklist", 50) is not None else 50,
+                "max_blacklist": getattr(u, "max_blacklist", 50)
+                if getattr(u, "max_blacklist", 50) is not None
+                else 50,
                 "features": json.loads(getattr(u, "features_json", "[]") or "[]"),
                 "admin_notes": getattr(u, "admin_notes", "") or "",
             }
@@ -958,6 +1018,17 @@ def dashboard():
     )
 
 
+@app.route("/camera/<int:camera_id>/manage", methods=["GET"])
+@require_auth
+def camera_management(camera_id):
+    camera = Camera.query.filter_by(id=camera_id, user_id=session["user_id"]).first()
+    if not camera:
+        flash("Caméra non trouvée.", "error")
+        return redirect(url_for("dashboard"))
+
+    return render_template("camera_management.html", camera=camera)
+
+
 @app.route("/camera/<int:camera_id>", methods=["GET"])
 @require_auth
 def camera_view(camera_id):
@@ -1010,10 +1081,28 @@ def update_camera_gps(camera_id):
     return redirect(url_for("dashboard"))
 
 
+@app.route("/dashboard/trigger_manual_alert", methods=["POST"])
+@require_auth
+def trigger_manual_alert():
+    user_id = session["user_id"]
+    msg = request.form.get("message", "Alerte manuelle déclenchée depuis le dashboard.")
+    send_alert(user_id, f"🚨 ALERTE MANUELLE 🚨\n{msg}")
+    flash("Alerte envoyée.", "success")
+    return redirect(url_for("dashboard"))
+
+
 @app.route("/dashboard/add_target", methods=["POST"])
 @require_auth
 def add_target():
     user_id = session["user_id"]
+    user = User.query.get(user_id)
+
+    count = NotificationTarget.query.filter_by(user_id=user_id).count()
+    if count >= get_max_notifications(user):
+        flash(
+            f"Limite de canaux atteinte ({get_max_notifications(user)} max).", "error"
+        )
+        return redirect(url_for("dashboard"))
 
     name = request.form.get("name")
     platform = request.form.get("platform")
@@ -1081,7 +1170,9 @@ def add_blacklist():
         return redirect(url_for("dashboard"))
 
     if norm_plate and match_plate:
-        if Blacklist.query.filter_by(user_id=user_id, plate_normalized=norm_plate).first():
+        if Blacklist.query.filter_by(
+            user_id=user_id, plate_normalized=norm_plate
+        ).first():
             flash("Cette plaque est déjà dans la base de données.", "error")
             return redirect(url_for("dashboard"))
 
@@ -1154,8 +1245,10 @@ def del_blacklist(id):
 # Ces endpoints sont conçus pour être stables — ne pas casser la compatibilité.
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _require_user_api_key(f):
     """Vérifie X-API-Key appartenant à une caméra — identifie l'utilisateur."""
+
     @wraps(f)
     def decorated(*args, **kwargs):
         key = request.headers.get("X-API-Key")
@@ -1166,6 +1259,7 @@ def _require_user_api_key(f):
             return jsonify({"error": "Invalid API key"}), 401
         request.ai_user_id = camera.user_id
         return f(*args, **kwargs)
+
     return decorated
 
 
@@ -1191,7 +1285,9 @@ def ai_get_summaries():
         q = q.filter_by(camera_id=camera_id)
     if since_str:
         try:
-            since_dt = datetime.fromisoformat(since_str.replace("Z", "+00:00").replace("+00:00", ""))
+            since_dt = datetime.fromisoformat(
+                since_str.replace("Z", "+00:00").replace("+00:00", "")
+            )
             q = q.filter(CameraSummary.created_at > since_dt)
         except ValueError:
             return jsonify({"error": "Invalid 'since' format, use ISO 8601"}), 400
@@ -1200,22 +1296,24 @@ def ai_get_summaries():
 
     summaries = q.order_by(CameraSummary.created_at.asc()).limit(limit).all()
 
-    return jsonify({
-        "count": len(summaries),
-        "summaries": [
-            {
-                "id": s.id,
-                "camera_id": s.camera_id,
-                "period_start": s.period_start.isoformat(),
-                "period_end": s.period_end.isoformat(),
-                "created_at": s.created_at.isoformat(),
-                "ai_processed": s.ai_processed,
-                "ai_response": s.ai_response or "",
-                "data": json.loads(s.summary_json),
-            }
-            for s in summaries
-        ],
-    }), 200
+    return jsonify(
+        {
+            "count": len(summaries),
+            "summaries": [
+                {
+                    "id": s.id,
+                    "camera_id": s.camera_id,
+                    "period_start": s.period_start.isoformat(),
+                    "period_end": s.period_end.isoformat(),
+                    "created_at": s.created_at.isoformat(),
+                    "ai_processed": s.ai_processed,
+                    "ai_response": s.ai_response or "",
+                    "data": json.loads(s.summary_json),
+                }
+                for s in summaries
+            ],
+        }
+    ), 200
 
 
 @app.route("/api/ai/latest", methods=["GET"])
@@ -1226,19 +1324,22 @@ def ai_get_latest():
     cameras = Camera.query.filter_by(user_id=user_id).all()
     result = []
     for cam in cameras:
-        s = (CameraSummary.query
-             .filter_by(camera_id=cam.id)
-             .order_by(CameraSummary.created_at.desc())
-             .first())
+        s = (
+            CameraSummary.query.filter_by(camera_id=cam.id)
+            .order_by(CameraSummary.created_at.desc())
+            .first()
+        )
         if s:
-            result.append({
-                "camera_id": cam.id,
-                "camera_name": cam.name,
-                "summary_id": s.id,
-                "created_at": s.created_at.isoformat(),
-                "ai_processed": s.ai_processed,
-                "data": json.loads(s.summary_json),
-            })
+            result.append(
+                {
+                    "camera_id": cam.id,
+                    "camera_name": cam.name,
+                    "summary_id": s.id,
+                    "created_at": s.created_at.isoformat(),
+                    "ai_processed": s.ai_processed,
+                    "data": json.loads(s.summary_json),
+                }
+            )
     return jsonify({"cameras": result}), 200
 
 
@@ -1284,13 +1385,15 @@ def ai_config():
     if request.method == "GET":
         if not cfg:
             return jsonify({"configured": False, "summary_interval": 60}), 200
-        return jsonify({
-            "configured": True,
-            "provider": cfg.provider,
-            "webhook_url": cfg.webhook_url,
-            "summary_interval": cfg.summary_interval,
-            "ai_enabled": cfg.ai_enabled,
-        }), 200
+        return jsonify(
+            {
+                "configured": True,
+                "provider": cfg.provider,
+                "webhook_url": cfg.webhook_url,
+                "summary_interval": cfg.summary_interval,
+                "ai_enabled": cfg.ai_enabled,
+            }
+        ), 200
 
     data = request.json or {}
     if not cfg:
