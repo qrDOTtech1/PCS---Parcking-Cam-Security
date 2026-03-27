@@ -51,6 +51,7 @@ BUFFER_SECONDS = 3
 FRAME_SEQUENCES = {}
 CAMERA_STATUS = {}
 MJPEG_STREAMS = {}
+PUBLIC_CAMERA_FRAMES = {}  # camera_id -> {frame, last_seen, name}
 
 app = Flask(__name__)
 app.secret_key = os.environ.get(
@@ -308,6 +309,22 @@ def ping():
             "recording_enabled": camera.recording_enabled,
         }
     ), 200
+
+
+
+@app.route("/public_stream/<camera_id>", methods=["POST"])
+def public_stream(camera_id):
+    if not re.match(r"^[a-zA-Z0-9_-]{1,32}$", camera_id):
+        return "Invalid camera ID", 400
+    if "image" in request.files:
+        frame_data = request.files["image"].read()
+        PUBLIC_CAMERA_FRAMES[camera_id] = {
+            "frame": frame_data,
+            "last_seen": datetime.utcnow(),
+            "name": request.form.get("name", camera_id),
+        }
+        return "OK", 200
+    return "No image", 400
 
 
 @app.route("/stream_upload", methods=["POST"])
@@ -832,6 +849,11 @@ def index():
     if "user_id" in session:
         return redirect(url_for("dashboard"))
     return redirect(url_for("login"))
+
+
+@app.route("/setup")
+def camera_setup():
+    return render_template("camera_setup.html")
 
 
 @app.route("/login", methods=["GET", "POST"])

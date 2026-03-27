@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PCS — Camera Setup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%); min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        #videoPreview { transform: scaleX(-1); }
+        .pulse-ring { animation: pulseRing 1.5s ease-out infinite; }
+        @keyframes pulseRing { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.4); opacity: 0; } }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+
+<div class="w-full max-w-lg">
+
+    <!-- Header -->
+    <div class="text-center mb-6">
+        <img src="/static/img/PCS_wordmark_logo.svg" alt="PCS" class="h-12 w-auto mx-auto mb-3 brightness-0 invert">
+        <h1 class="text-white font-bold text-xl">Camera Setup</h1>
+        <p class="text-white/50 text-sm mt-1">Use your phone or webcam as a PCS camera</p>
+    </div>
+
+    <div class="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-6 shadow-2xl">
+
+        <!-- Step 1 : Camera ID -->
+        <div class="mb-5">
+            <label class="block text-white/70 text-sm font-medium mb-1">
+                Camera ID <span class="text-white/30 font-normal">(this is your API key — must be unique)</span>
+            </label>
+            <input type="text" id="cameraId" placeholder="e.g. phone-parking-front"
+                maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false"
+                class="w-full px-4 py-3 rounded-xl border border-white/20 bg-white/10 text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-blue-400 font-mono text-sm transition">
+            <p class="text-white/30 text-xs mt-1">Letters, numbers, - and _ only · max 32 chars</p>
+        </div>
+
+        <!-- Step 2 : Camera selector -->
+        <div class="mb-5">
+            <label class="block text-white/70 text-sm font-medium mb-1">Device Camera</label>
+            <select id="cameraSelect"
+                class="w-full px-4 py-3 rounded-xl border border-white/20 bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm transition">
+                <option value="">-- Select a camera --</option>
+            </select>
+        </div>
+
+        <!-- Step 3 : Video preview -->
+        <div class="relative bg-black rounded-xl overflow-hidden aspect-video mb-5 flex items-center justify-center">
+            <video id="videoPreview" class="w-full h-full object-cover hidden" autoplay muted playsinline></video>
+            <div id="previewPlaceholder" class="text-white/30 text-center">
+                <svg class="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+                <span class="text-sm">Preview</span>
+            </div>
+            <!-- LIVE badge -->
+            <div id="liveBadge" class="hidden absolute top-2 right-2 items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full">
+                <span class="relative flex h-2 w-2">
+                    <span class="pulse-ring absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                </span>
+                LIVE
+            </div>
+            <!-- Status badge (registered / pending) -->
+            <div id="statusBadge" class="hidden absolute top-2 left-2 text-xs font-bold px-2 py-1 rounded-full"></div>
+        </div>
+        <canvas id="captureCanvas" class="hidden"></canvas>
+
+        <!-- Buttons -->
+        <div class="flex gap-3 mb-4">
+            <button id="startBtn" onclick="startCamera()"
+                class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition text-sm">
+                Start streaming
+            </button>
+            <button id="stopBtn" onclick="stopCamera()" disabled
+                class="flex-1 bg-white/10 text-white/40 font-bold py-3 rounded-xl transition text-sm cursor-not-allowed">
+                Stop
+            </button>
+        </div>
+
+        <!-- Info box (shown when streaming) -->
+        <div id="infoBox" class="hidden p-4 bg-blue-500/20 border border-blue-400/30 rounded-xl text-sm">
+            <p class="text-blue-100 font-medium mb-2">Camera is streaming to PCS server</p>
+            <p class="text-blue-200/70 text-xs mb-3">To view this camera on the dashboard:</p>
+            <ol class="text-blue-200/70 text-xs space-y-1 list-decimal list-inside mb-3">
+                <li>Log in to your PCS account</li>
+                <li>Click <strong class="text-blue-200">Add Camera</strong></li>
+                <li>Enter any name + API Key: <code id="displayId" class="bg-white/10 px-1 rounded font-mono text-white"></code></li>
+            </ol>
+            <div id="registeredNotice" class="hidden text-green-300 text-xs font-medium">
+                ✓ Camera registered — streaming live to dashboard
+            </div>
+        </div>
+
+        <!-- Back to login -->
+        <a href="/login" class="block text-center text-white/40 hover:text-white/70 text-sm mt-4 transition">
+            ← Back to login
+        </a>
+
+    </div>
+</div>
+
+<script>
+    let mediaStream = null;
+    let streamInterval = null;
+    let activeCameraId = null;
+    let isRegistered = false;
+
+    async function loadCameras() {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const select = document.getElementById('cameraSelect');
+            // Clear existing options (keep placeholder)
+            while (select.options.length > 1) select.remove(1);
+            const videoDevices = devices.filter(d => d.kind === 'videoinput');
+            videoDevices.forEach((d, i) => {
+                const opt = document.createElement('option');
+                opt.value = d.deviceId;
+                opt.textContent = d.label || `Camera ${i + 1}`;
+                select.appendChild(opt);
+            });
+            if (videoDevices.length === 1) select.value = videoDevices[0].deviceId;
+        } catch (e) { /* silent */ }
+    }
+
+    async function startCamera() {
+        const camId = document.getElementById('cameraId').value.trim();
+        if (!camId || !/^[a-zA-Z0-9_-]{1,32}$/.test(camId)) {
+            alert('Please enter a valid Camera ID (letters, numbers, - and _ only, max 32 chars)');
+            return;
+        }
+
+        const deviceId = document.getElementById('cameraSelect').value;
+        const constraints = { video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } : { width: { ideal: 1280 }, height: { ideal: 720 } } };
+
+        try {
+            mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+            await loadCameras(); // reload with labels now that permission is granted
+
+            const video = document.getElementById('videoPreview');
+            video.srcObject = mediaStream;
+            video.classList.remove('hidden');
+            document.getElementById('previewPlaceholder').classList.add('hidden');
+            document.getElementById('liveBadge').classList.remove('hidden');
+            document.getElementById('liveBadge').classList.add('flex');
+
+            activeCameraId = camId;
+            isRegistered = false;
+            document.getElementById('displayId').textContent = camId;
+            document.getElementById('infoBox').classList.remove('hidden');
+            document.getElementById('cameraId').disabled = true;
+            document.getElementById('cameraSelect').disabled = true;
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('startBtn').classList.add('opacity-50', 'cursor-not-allowed');
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('stopBtn').classList.remove('bg-white/10', 'text-white/40', 'cursor-not-allowed');
+            document.getElementById('stopBtn').classList.add('bg-red-600', 'hover:bg-red-500', 'text-white');
+
+            const canvas = document.getElementById('captureCanvas');
+            const ctx = canvas.getContext('2d');
+
+            streamInterval = setInterval(async () => {
+                if (!mediaStream || !video.videoWidth) return;
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0);
+                canvas.toBlob(async (blob) => {
+                    if (!blob) return;
+                    const fd = new FormData();
+                    fd.append('image', blob, 'frame.jpg');
+                    fd.append('api_key', activeCameraId);
+
+                    // Try /stream_upload first (camera registered in dashboard)
+                    try {
+                        const res = await fetch('/stream_upload', { method: 'POST', body: fd });
+                        if (res.ok) {
+                            if (!isRegistered) {
+                                isRegistered = true;
+                                updateRegisteredStatus(true);
+                            }
+                            return;
+                        }
+                    } catch (e) { /* network error */ }
+
+                    // Fallback: /public_stream (not yet registered)
+                    if (isRegistered) {
+                        isRegistered = false;
+                        updateRegisteredStatus(false);
+                    }
+                    const fd2 = new FormData();
+                    fd2.append('image', blob, 'frame.jpg');
+                    fd2.append('name', activeCameraId);
+                    try { await fetch(`/public_stream/${activeCameraId}`, { method: 'POST', body: fd2 }); }
+                    catch (e) { /* silent */ }
+                }, 'image/jpeg', 0.75);
+            }, 200);
+
+        } catch (e) {
+            alert('Could not access camera: ' + e.message);
+        }
+    }
+
+    function updateRegisteredStatus(registered) {
+        const badge = document.getElementById('statusBadge');
+        const notice = document.getElementById('registeredNotice');
+        if (registered) {
+            badge.textContent = '✓ Registered';
+            badge.className = 'absolute top-2 left-2 text-xs font-bold px-2 py-1 rounded-full bg-green-600 text-white';
+            badge.classList.remove('hidden');
+            notice.classList.remove('hidden');
+        } else {
+            badge.textContent = '⏳ Pending';
+            badge.className = 'absolute top-2 left-2 text-xs font-bold px-2 py-1 rounded-full bg-yellow-600 text-white';
+            badge.classList.remove('hidden');
+            notice.classList.add('hidden');
+        }
+    }
+
+    function stopCamera() {
+        clearInterval(streamInterval);
+        streamInterval = null;
+        if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+        const video = document.getElementById('videoPreview');
+        video.srcObject = null;
+        video.classList.add('hidden');
+        document.getElementById('previewPlaceholder').classList.remove('hidden');
+        document.getElementById('liveBadge').classList.add('hidden');
+        document.getElementById('liveBadge').classList.remove('flex');
+        document.getElementById('statusBadge').classList.add('hidden');
+        document.getElementById('infoBox').classList.add('hidden');
+        document.getElementById('cameraId').disabled = false;
+        document.getElementById('cameraSelect').disabled = false;
+        document.getElementById('startBtn').disabled = false;
+        document.getElementById('startBtn').classList.remove('opacity-50', 'cursor-not-allowed');
+        document.getElementById('stopBtn').disabled = true;
+        document.getElementById('stopBtn').classList.add('bg-white/10', 'text-white/40', 'cursor-not-allowed');
+        document.getElementById('stopBtn').classList.remove('bg-red-600', 'hover:bg-red-500', 'text-white');
+        activeCameraId = null;
+        isRegistered = false;
+    }
+
+    loadCameras();
+</script>
+</body>
+</html>
