@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script de migration pour mettre à jour la base de données SLEDI v2.0
+Script de migration pour mettre à jour la base de données ParkingCamSecurity v2.0
 Exécuter: python migrate.py
 """
 
@@ -8,7 +8,7 @@ import sqlite3
 import sys
 import os
 
-DB_PATH = "/home/Wlansolo/vigilance_multi.db"
+DB_PATH = "parkingcam.db"
 
 
 def migrate():

@@ -52,12 +52,12 @@ MJPEG_STREAMS = {}
 app = Flask(__name__)
 app.secret_key = os.environ.get(
     "FLASK_SECRET_KEY",
-    os.environ.get("SECRET_KEY", "vigilance-super-secret-key-change-in-prod"),
+    os.environ.get("SECRET_KEY", "parkingcam-secret-key-change-in-prod"),
 )
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "DATABASE_URL", "sqlite:///vigilance.db"
+    "DATABASE_URL", "sqlite:///parkingcam.db"
 )
-app.config["MASTER_KEY"] = os.environ.get("MASTER_KEY", "master_key_sledi_2024")
+app.config["MASTER_KEY"] = os.environ.get("MASTER_KEY", "master_key_pcs_2024")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
@@ -93,7 +93,7 @@ def require_admin_auth(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         key = request.headers.get("X-Master-Key")
-        if not key or key != os.environ.get("MASTER_KEY", "master_key_sledi_2024"):
+        if not key or key != os.environ.get("MASTER_KEY", "master_key_pcs_2024"):
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
         return f(*args, **kwargs)
     return decorated_function
@@ -257,7 +257,7 @@ def upload_image():
 
                 if blacklisted:
                     threat = True
-                    alert_msg = f"🚨 ALERTE VIGILANCE 🚨\nVéhicule Suspect!\nPlaque: {normalized_read}\nCaméra: {camera.name}\nRaison: {blacklisted.description}"
+                    alert_msg = f"🚨 ALERTE PCS 🚨\nVéhicule Suspect!\nPlaque: {normalized_read}\nCaméra: {camera.name}\nRaison: {blacklisted.description}"
                     send_alert(user_id, alert_msg)
                     socketio.emit(
                         "threat_alert",
@@ -727,7 +727,7 @@ def handle_client_watch(data):
 
 
 ADMIN_MASTER_KEY = os.environ.get(
-    "MASTER_KEY", os.environ.get("ADMIN_MASTER_KEY", "master_key_sledi_2024")
+    "MASTER_KEY", os.environ.get("ADMIN_MASTER_KEY", "master_key_pcs_2024")
 )
 
 

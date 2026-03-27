@@ -1,15 +1,15 @@
 [Unit]
-Description=Vigilance Flask App
+Description=ParkingCamSecurity Flask App
 After=network.target
 
 [Service]
 User=www-data
 Group=www-data
-WorkingDirectory=/var/www/vigilance
-Environment="PATH=/var/www/vigilance/venv/bin"
-Environment="DATABASE_URL=sqlite:////var/www/vigilance/vigilance.db"
+WorkingDirectory=/var/www/parkingcam
+Environment="PATH=/var/www/parkingcam/venv/bin"
+Environment="DATABASE_URL=sqlite:////var/www/parkingcam/parkingcam.db"
 Environment="SECRET_KEY=votre-cle-secrete-unique-ici"
-ExecStart=/var/www/vigilance/venv/bin/gunicorn --workers 4 --bind 127.0.0.1:5000 --worker-class=eventlet --timeout 120 app:app
+ExecStart=/var/www/parkingcam/venv/bin/gunicorn --workers 4 --bind 127.0.0.1:5000 --worker-class=eventlet --timeout 120 app:app
 Restart=always
 RestartSec=10
 

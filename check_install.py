@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Diagnostic script pour vérifier l'installation de SLEDI
+Diagnostic script pour vérifier l'installation de ParkingCamSecurity (PCS)
 Exécuter: python check_install.py
 """
 
 import sys
 
 print("=" * 50)
-print("SLEDI - Installation Check")
+print("ParkingCamSecurity (PCS) - Installation Check")
 print("=" * 50)
 
 # Check Python version

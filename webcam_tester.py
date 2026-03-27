@@ -12,10 +12,10 @@ DEFAULT_API_URL = "https://Wlansolo.pythonanywhere.com"
 DEFAULT_API_KEY = "secret123"
 
 
-class VigilanceSimulatorApp:
+class PCSSimulatorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("СЛЕДИ (SLEDI) - Hardware Simulator")
+        self.root.title("ParkingCamSecurity (PCS) - Hardware Simulator")
         self.root.geometry("950x750")
         self.root.configure(bg="#050505")
 
@@ -461,6 +461,6 @@ class VigilanceSimulatorApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = VigilanceSimulatorApp(root)
+    app = PCSSimulatorApp(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()

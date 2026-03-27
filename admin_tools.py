@@ -17,7 +17,7 @@ def load_master_key():
 
 
 API_BASE_URL = "https://Wlansolo.pythonanywhere.com/api/admin/users"
-MASTER_KEY = load_master_key() or "master_key_sledi_2024"
+MASTER_KEY = load_master_key() or "master_key_pcs_2024"
 MAX_RETRIES = 3
 RETRY_DELAY = 2
 
@@ -38,10 +38,10 @@ def _make_request(method, url, **kwargs):
                 raise
 
 
-class AdminSlediApp:
+class AdminPCSApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("СЛЕДИ (SLEDI) - Admin Control Panel")
+        self.root.title("ParkingCamSecurity (PCS) - Admin Control Panel")
         self.root.geometry("600x450")
         self.root.configure(bg="#0f172a")
 
@@ -58,7 +58,7 @@ class AdminSlediApp:
 
         title_lbl = tk.Label(
             top_frame,
-            text="СЛЕДИ / SLEDI ADMIN",
+            text="ParkingCamSecurity (PCS) ADMIN",
             font=("Arial", 16, "bold"),
             fg="#3b82f6",
             bg="#1e293b",
@@ -415,5 +415,5 @@ class AdminSlediApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = AdminSlediApp(root)
+    app = AdminPCSApp(root)
     root.mainloop()

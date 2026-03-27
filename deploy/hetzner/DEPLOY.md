@@ -29,8 +29,8 @@ apt update && apt upgrade -y
 apt install python3 python3-pip python3-venv nginx git -y
 
 # Création du dossier
-mkdir -p /var/www/vigilance
-cd /var/www/vigilance
+mkdir -p /var/www/parkingcam
+cd /var/www/parkingcam
 ```
 
 ## 4. Transférer les fichiers
@@ -39,7 +39,7 @@ cd /var/www/vigilance
 
 ```powershell
 # Transférer tous les fichiers du dossier SERV
-scp -r C:\Users\Super\Music\ZIK\board\SERV\* root@IP_SERVEUR:/var/www/vigilance/
+scp -r C:\Users\Super\Music\ZIK\board\SERV\* root@IP_SERVEUR:/var/www/parkingcam/
 ```
 
 **Fichiers à inclure :**
@@ -47,12 +47,12 @@ scp -r C:\Users\Super\Music\ZIK\board\SERV\* root@IP_SERVEUR:/var/www/vigilance/
 - models.py
 - requirements.txt
 - templates/ (dossier)
-- vigilance_wsgi.py
+- parkingcam_wsgi.py
 
 ## 5. Configurer l'application
 
 ```bash
-cd /var/www/vigilance
+cd /var/www/parkingcam
 
 # Créer l'environnement virtuel
 python3 -m venv venv
@@ -81,23 +81,23 @@ print('Admin créé!')
 ## 6. Configurer systemd
 
 ```bash
-nano /etc/systemd/system/vigilance.service
+nano /etc/systemd/system/parkingcam.service
 ```
 
 Colle ce contenu (remplace `TON_SECRET_KEY` par une clé unique) :
 
 ```ini
 [Unit]
-Description=Vigilance Flask App
+Description=ParkingCamSecurity Flask App
 After=network.target
 
 [Service]
 User=root
-WorkingDirectory=/var/www/vigilance
-Environment="PATH=/var/www/vigilance/venv/bin"
-Environment="DATABASE_URL=sqlite:////var/www/vigilance/vigilance.db"
+WorkingDirectory=/var/www/parkingcam
+Environment="PATH=/var/www/parkingcam/venv/bin"
+Environment="DATABASE_URL=sqlite:////var/www/parkingcam/parkingcam.db"
 Environment="SECRET_KEY=TON_SECRET_KEY_UNIQUE"
-ExecStart=/var/www/vigilance/venv/bin/gunicorn --workers 4 --bind 127.0.0.1:5000 --worker-class=eventlet --timeout 120 app:app
+ExecStart=/var/www/parkingcam/venv/bin/gunicorn --workers 4 --bind 127.0.0.1:5000 --worker-class=eventlet --timeout 120 app:app
 Restart=always
 
 [Install]
@@ -107,17 +107,17 @@ WantedBy=multi-user.target
 ```bash
 # Activer le service
 systemctl daemon-reload
-systemctl enable vigilance
-systemctl start vigilance
+systemctl enable parkingcam
+systemctl start parkingcam
 
 # Vérifier le statut
-systemctl status vigilance
+systemctl status parkingcam
 ```
 
 ## 7. Configurer Nginx
 
 ```bash
-nano /etc/nginx/sites-available/vigilance
+nano /etc/nginx/sites-available/parkingcam
 ```
 
 Colle (remplace `TON_IP` par ton IP Hetzner) :
@@ -152,7 +152,7 @@ server {
 
 ```bash
 # Activer le site
-ln -s /etc/nginx/sites-available/vigilance /etc/nginx/sites-enabled/
+ln -s /etc/nginx/sites-available/parkingcam /etc/nginx/sites-enabled/
 nginx -t
 systemctl reload nginx
 ```
@@ -181,15 +181,15 @@ const char* serverUrl = "http://IP_DU_SERVEUR";
 
 ```bash
 # Voir les logs
-journalctl -u vigilance -f
+journalctl -u parkingcam -f
 
 # Redémarrer l'app
-systemctl restart vigilance
+systemctl restart parkingcam
 
 # Mettre à jour les fichiers
 # 1. Transfère les nouveaux fichiers
 # 2. Redémarre
-systemctl restart vigilance
+systemctl restart parkingcam
 ```
 
 ---

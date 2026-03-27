@@ -1,31 +1,25 @@
-# СЛЕДИ (SLEDI) - Server v2.0
+# ParkingCamSecurity (PCS) - Server v2.0
 
-## Installation sur PythonAnywhere
-
-### 1. Préparer l'environnement
+## Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configuration
+## Configuration
 
-Créez un fichier `.env` ou définissez les variables d'environnement :
+Copie `.env.example` en `.env` et remplis les valeurs :
 ```bash
-export SECRET_KEY="votre-cle-secrete-tres-longue"
-export ADMIN_MASTER_KEY="votre-master-key-pour-admin"
-export PLATE_RECOGNIZER_URL="https://api.platerecognizer.com/v1/plate-reader"
+FLASK_SECRET_KEY=une-cle-secrete-longue-et-unique
+MASTER_KEY=ta-master-key-admin
+DATABASE_URL=sqlite:///parkingcam.db
+SERVER_URL=https://ton-app.railway.app
 ```
 
-### 3. Lancer le serveur
+## Lancer le serveur
 
 ```bash
 python app.py
-```
-
-Ou via WSGI :
-```bash
-python vigilance_wsgi.py
 ```
 
 ## Endpoints API
@@ -44,7 +38,7 @@ python vigilance_wsgi.py
 | `/stream_upload` | POST | Reception frames continues |
 | `/upload` | POST | Analyse OCR d'une image |
 
-### API Camera (config)
+### API Caméra (config)
 | Endpoint | Méthode | Description |
 |----------|---------|-------------|
 | `/api/camera/config/<key>` | GET | Lire config caméra |
@@ -63,44 +57,36 @@ python vigilance_wsgi.py
 
 ## Base de données
 
-SQLite : `vigilance_multi.db`
+SQLite : `parkingcam.db`
 
 ### Tables
 
-- **User**: Utilisateurs (auth, subscription)
-- **Camera**: Caméras (name, api_key, config_json, etc.)
-- **Blacklist**: Plaques suspectes
-- **NotificationTarget**: Canaux Signal/Telegram
-- **SystemConfig**: Configs système (Plate Recognizer token)
-
-### Migrations
-
-Les migrations sont automatiques au premier lancement.
-
-## Migration vers un autre serveur
-
-Le code est 100% portable :
-
-1. Copiez tous les fichiers du dossier `SERV/`
-2. Exécutez `pip install -r requirements.txt`
-3. Configurez les variables d'environnement
-4. Lancez `python app.py`
-
-La base SQLite peut être copiée simplement sur le nouveau serveur.
+- **User** : Utilisateurs (auth, subscription)
+- **Camera** : Caméras (name, api_key, config_json, etc.)
+- **Blacklist** : Plaques suspectes
+- **NotificationTarget** : Canaux Signal/Telegram
+- **SystemConfig** : Configs système (Plate Recognizer token)
 
 ## Structure des fichiers
 
 ```
-SERV/
+ParkingCamSecurity/
 ├── app.py              # Application Flask principale
 ├── models.py           # Modèles SQLAlchemy
 ├── requirements.txt    # Dépendances Python
-├── admin_tools.py     # Outil admin desktop
-├── webcam_tester.py   # Simulateur pour test
+├── .env.example        # Template de configuration
+├── Dockerfile          # Déploiement Docker
+├── admin_tools.py      # Outil admin desktop
+├── webcam_tester.py    # Simulateur ESP32 pour test
+├── stream_tester.py    # Test de flux vidéo
+├── esp32_tracker.ino   # Firmware ESP32
 ├── templates/
-│   ├── login.html     # Page login
-│   ├── dashboard.html # Vue grille caméras
+│   ├── login.html      # Page login
+│   ├── dashboard.html  # Vue grille caméras
 │   └── camera_view.html # Vue détaillée caméra
+├── deploy/
+│   ├── hetzner/        # Guide déploiement Hetzner
+│   └── railway/        # Guide déploiement Railway
 └── static/
     ├── css/
     └── js/
@@ -120,13 +106,17 @@ Le serveur utilise Flask-SocketIO pour les communications temps réel :
 - Rate limiting (Flask-Limiter)
 - Password hashing (Werkzeug)
 
-## Plate Recognizer
+## Plate Recognizer (OCR)
 
-Pour activer l'OCR, configurez votre token dans le dashboard :
-1. Créez un compte sur https://api.platerecognizer.com
-2. Ajoutez votre token dans Configuration AI Engine
-3. Le système analysera automatiquement les plaques
+Pour activer la reconnaissance de plaques :
+1. Crée un compte sur https://api.platerecognizer.com
+2. Ajoute ton token dans Configuration AI Engine du dashboard
+3. Le système analysera automatiquement les plaques détectées
+
+## Déploiement
+
+Voir `deploy/railway/DEPLOY.md` pour Railway ou `deploy/hetzner/DEPLOY.md` pour Hetzner.
 
 ## Licence
 
-Projet SLEDI - Vigilance Drive
+ParkingCamSecurity (PCS) - Open Source

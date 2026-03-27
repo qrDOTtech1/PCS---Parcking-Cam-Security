@@ -10,7 +10,7 @@
 
 Assure-toi d'avoir ces fichiers dans un dossier :
 ```
-vigilance/
+parkingcam/
 ├── app.py
 ├── models.py
 ├── requirements.txt
@@ -37,7 +37,7 @@ Une fois déployé, configure les variables d'environnement :
 1. Dans Railway Dashboard → ton service → **"Variables"**
 2. Ajoute :
    ```
-   DATABASE_URL=sqlite:///vigilance.db
+   DATABASE_URL=sqlite:///parkingcam.db
    SECRET_KEY=une_cle_secrete_unique
    PORT=5000
    ```

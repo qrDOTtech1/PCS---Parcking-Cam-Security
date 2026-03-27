@@ -13,7 +13,7 @@ warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 class StreamTesterApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("SLEDI Stream Tester")
+        self.root.title("PCS Stream Tester")
         self.root.geometry("800x600")
         self.root.configure(bg="#0f172a")
 
@@ -42,7 +42,7 @@ class StreamTesterApp:
 
         tk.Label(
             top_frame,
-            text="SLEDI Stream Tester",
+            text="PCS Stream Tester",
             font=("Arial", 16, "bold"),
             fg="#3b82f6",
             bg="#1e293b",
@@ -55,7 +55,7 @@ class StreamTesterApp:
             row=0, column=0, sticky=tk.W
         )
         self.url_entry = ttk.Entry(config_frame, width=40)
-        self.url_entry.insert(0, "https://pysledi-production.up.railway.app")
+        self.url_entry.insert(0, "https://your-pcs-app.up.railway.app")
         self.url_entry.grid(row=0, column=1, padx=5, pady=2)
 
         tk.Label(config_frame, text="API Key:", fg="#f8fafc", bg="#1e293b").grid(
