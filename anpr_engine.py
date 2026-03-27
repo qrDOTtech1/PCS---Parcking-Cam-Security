@@ -66,6 +66,7 @@ class ANPREngine:
     def _detect_color(self, crop):
         """Détecte la couleur dominante d'un crop véhicule (BGR → HSV)."""
         import cv2
+
         if crop is None or crop.size == 0:
             return "unknown"
         try:
@@ -148,7 +149,15 @@ class ANPREngine:
                 crop = img[y1c:y2c, x1c:x2c]
                 if crop.size > 0:
                     color = self._detect_color(crop)
-                    vehicle_crops.append((crop, [x1c, y1c, x2c, y2c], float(box.conf[0]), vehicle_type, color))
+                    vehicle_crops.append(
+                        (
+                            crop,
+                            [x1c, y1c, x2c, y2c],
+                            float(box.conf[0]),
+                            vehicle_type,
+                            color,
+                        )
+                    )
 
         # Fallback : image entière si aucun véhicule
         if not vehicle_crops:
@@ -179,13 +188,17 @@ class ANPREngine:
                     plate_found = normalized
                     best_conf = conf
 
-            detections.append({
-                "plate": plate_found,
-                "confidence": round(best_conf, 3) if plate_found else round(veh_conf, 3),
-                "bbox": bbox,
-                "vehicle_type": vehicle_type,
-                "vehicle_color": vehicle_color,
-            })
+            detections.append(
+                {
+                    "plate": plate_found,
+                    "confidence": round(best_conf, 3)
+                    if plate_found
+                    else round(veh_conf, 3),
+                    "bbox": bbox,
+                    "vehicle_type": vehicle_type,
+                    "vehicle_color": vehicle_color,
+                }
+            )
 
         # Dédupliquer les plaques (garder meilleure confiance)
         seen_plates = {}
@@ -193,14 +206,21 @@ class ANPREngine:
         for d in detections:
             if d["plate"]:
                 p = d["plate"]
-                if p not in seen_plates or d["confidence"] > seen_plates[p]["confidence"]:
+                if (
+                    p not in seen_plates
+                    or d["confidence"] > seen_plates[p]["confidence"]
+                ):
                     seen_plates[p] = d
             else:
-                final.append(d)  # garder les détections sans plaque (type/couleur uniquement)
+                # Si pas de plaque, on ne garde que s'il y a un VRAI véhicule détecté (pas le fallback "unknown")
+                if d["vehicle_type"] != "unknown":
+                    final.append(d)
 
         final.extend(seen_plates.values())
 
         if any(d["plate"] for d in final):
-            logger.info(f"[ANPR] Detected plates: {[d['plate'] for d in final if d['plate']]}")
+            logger.info(
+                f"[ANPR] Detected plates: {[d['plate'] for d in final if d['plate']]}"
+            )
 
         return final

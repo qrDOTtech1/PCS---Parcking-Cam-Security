@@ -1110,12 +1110,18 @@ def camera_management(camera_id):
                     "threats": len([d for d in detections if d.is_threat]),
                 }
                 for d in detections:
-                    stats["by_type"][d.vehicle_type] = (
-                        stats["by_type"].get(d.vehicle_type, 0) + 1
+                    # Translate 'unknown' to 'Non-reconnu'
+                    v_type = (
+                        "Non-reconnu" if d.vehicle_type == "unknown" else d.vehicle_type
                     )
-                    stats["by_color"][d.vehicle_color] = (
-                        stats["by_color"].get(d.vehicle_color, 0) + 1
+                    v_color = (
+                        "Non-reconnu"
+                        if d.vehicle_color == "unknown"
+                        else d.vehicle_color
                     )
+
+                    stats["by_type"][v_type] = stats["by_type"].get(v_type, 0) + 1
+                    stats["by_color"][v_color] = stats["by_color"].get(v_color, 0) + 1
 
     return render_template("camera_management.html", camera=camera, stats=stats)
 

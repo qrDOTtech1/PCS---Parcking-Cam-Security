@@ -35,6 +35,29 @@ BLUE_FLASH_MIN_VAR = 0.002  # variance minimale = oscillation (flash vs couleur 
 BLUE_FLASH_DEDUP = 30  # cooldown entre 2 alertes gyrophare (secondes)
 BLUE_FLASH_LAST = {}  # camera_id -> timestamp dernière alerte
 
+# ── Tracking de véhicules (IoU) ─────────────────────────────────────────────
+# Permet de vérifier les frames précédentes pour ne pas compter en double
+CAMERA_TRACKS = {}  # cam_id -> list of track_data
+TRACK_ID_COUNTER = {}  # cam_id -> int
+TRACK_EXPIRY_SECONDS = 30  # Si un véhicule disparaît pendant 30s, on l'oublie
+
+
+def compute_iou(boxA, boxB):
+    """Calcule l'Intersection sur Union (IoU) entre deux bounding boxes."""
+    if not boxA or not boxB or len(boxA) != 4 or len(boxB) != 4:
+        return 0.0
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+    interArea = max(0, float(xB - xA)) * max(0, float(yB - yA))
+    boxAArea = float(boxA[2] - boxA[0]) * float(boxA[3] - boxA[1])
+    boxBArea = float(boxB[2] - boxB[0]) * float(boxB[3] - boxB[1])
+    denom = boxAArea + boxBArea - interArea
+    if denom <= 0:
+        return 0.0
+    return interArea / denom
+
 
 def _measure_blue_coverage(image_bytes):
     """
@@ -180,21 +203,78 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                             )
                             continue
 
+                        # Chargement des objets suivis (tracking)
+                        if cam_id not in CAMERA_TRACKS:
+                            CAMERA_TRACKS[cam_id] = []
+                        current_tracks = CAMERA_TRACKS[cam_id]
+
                         for detection in results:
                             plate = detection.get("plate")
                             confidence = detection.get("confidence", 0)
                             veh_type = detection.get("vehicle_type", "unknown")
                             veh_color = detection.get("vehicle_color", "unknown")
+                            bbox = detection.get("bbox")
 
-                            # Clé déduplique : plaque OU (type+couleur) si pas de plaque
+                            # 1. Vérification avec les frames précédentes (Tracking IoU)
+                            best_iou = 0.0
+                            best_track = None
+                            for t in current_tracks:
+                                iou = compute_iou(bbox, t.get("bbox"))
+                                if iou > best_iou:
+                                    best_iou = iou
+                                    best_track = t
+
+                            is_new_vehicle = False
+                            if best_iou > 0.3:
+                                # C'est un véhicule déjà vu (garé ou qui bouge lentement)
+                                best_track["bbox"] = bbox
+                                best_track["last_seen"] = time.time()
+
+                                # Mise à jour des informations si elles sont meilleures
+                                if plate and not best_track["plate"]:
+                                    best_track["plate"] = plate
+                                    is_new_vehicle = (
+                                        True  # On veut loguer la nouvelle info (plaque)
+                                    )
+                                if (
+                                    veh_color != "unknown"
+                                    and best_track["color"] == "unknown"
+                                ):
+                                    best_track["color"] = veh_color
+                                if (
+                                    veh_type != "unknown"
+                                    and best_track["type"] == "unknown"
+                                ):
+                                    best_track["type"] = veh_type
+                            else:
+                                # C'est un nouveau véhicule qui entre dans le cadre
+                                t_id = TRACK_ID_COUNTER.get(cam_id, 1)
+                                TRACK_ID_COUNTER[cam_id] = t_id + 1
+                                new_track = {
+                                    "id": t_id,
+                                    "bbox": bbox,
+                                    "plate": plate,
+                                    "type": veh_type,
+                                    "color": veh_color,
+                                    "last_seen": time.time(),
+                                }
+                                current_tracks.append(new_track)
+                                is_new_vehicle = True
+
+                            # Clé déduplique pour ne pas SPAMMER les alertes
                             dedup_key = (
                                 (cam_id, plate)
                                 if plate
                                 else (cam_id, veh_type, veh_color)
                             )
                             last_seen = RECENT_DETECTIONS.get(dedup_key, 0)
-                            if time.time() - last_seen < DEDUP_WINDOW:
+
+                            # On ne continue le process (alerte, etc) que si c'est nouveau ou hors cooldown
+                            if not is_new_vehicle and (
+                                time.time() - last_seen < DEDUP_WINDOW
+                            ):
                                 continue
+
                             RECENT_DETECTIONS[dedup_key] = time.time()
 
                             # --- Chercher une correspondance blacklist ---
@@ -318,6 +398,14 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                 ]
                 for k in expired:
                     del RECENT_DETECTIONS[k]
+
+                # Nettoyage cache tracking
+                for cam_id in list(CAMERA_TRACKS.keys()):
+                    CAMERA_TRACKS[cam_id] = [
+                        t
+                        for t in CAMERA_TRACKS[cam_id]
+                        if now - t["last_seen"] < TRACK_EXPIRY_SECONDS
+                    ]
 
             except Exception as e:
                 logger.error(f"[ANPR Worker] Cycle error: {e}")
