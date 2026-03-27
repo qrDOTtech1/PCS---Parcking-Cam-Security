@@ -50,6 +50,7 @@ class Camera(db.Model):
     recording_enabled = db.Column(db.Boolean, default=True)
     stream_auto_mode = db.Column(db.String(20), default="off")
     is_streaming = db.Column(db.Boolean, default=False)
+    flash_detect_enabled = db.Column(db.Boolean, default=True)  # gyrophare détection
 
     def get_config(self):
         import json

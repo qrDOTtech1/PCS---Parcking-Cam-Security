@@ -119,10 +119,13 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                         frame_bytes = latest_frames[cam_id]
 
                         # ── Gyrophare : mesure couverture bleue (rapide, CPU) ──
+                        flash_enabled = getattr(camera, "flash_detect_enabled", True)
+                        if flash_enabled is None:
+                            flash_enabled = True
                         try:
                             blue_cov = eventlet.tpool.execute(
                                 _measure_blue_coverage, frame_bytes
-                            )
+                            ) if flash_enabled else 0.0
                         except Exception:
                             blue_cov = 0.0
 

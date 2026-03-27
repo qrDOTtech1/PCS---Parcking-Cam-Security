@@ -170,6 +170,12 @@ def create_tables():
             pass
         try:
             conn.execute(
+                text("ALTER TABLE camera ADD COLUMN flash_detect_enabled INTEGER DEFAULT 1")
+            )
+        except:
+            pass
+        try:
+            conn.execute(
                 text("ALTER TABLE user ADD COLUMN subscription_mode VARCHAR(30) DEFAULT 'standard'")
             )
         except:
@@ -1095,6 +1101,16 @@ def add_blacklist():
     flash("Règle de surveillance ajoutée.", "success")
 
     return redirect(url_for("dashboard"))
+
+
+@app.route("/dashboard/toggle_flash/<int:camera_id>", methods=["POST"])
+@require_auth
+def toggle_flash(camera_id):
+    cam = Camera.query.filter_by(id=camera_id, user_id=session["user_id"]).first()
+    if cam:
+        cam.flash_detect_enabled = not cam.flash_detect_enabled
+        db.session.commit()
+    return jsonify({"enabled": cam.flash_detect_enabled if cam else False}), 200
 
 
 @app.route("/dashboard/del_camera/<int:id>", methods=["POST"])

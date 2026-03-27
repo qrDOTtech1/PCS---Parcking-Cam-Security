@@ -204,53 +204,84 @@
                         </div>
 
                         {% if subscription_mode in ['emergency','enterprise'] %}
-                        <!-- Row 2: Advanced filters (emergency/enterprise only) -->
-                        <div class="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                            <p class="text-xs font-semibold text-orange-700 mb-2 uppercase">Advanced Filters — Emergency Mode</p>
-                            <div class="grid grid-cols-2 gap-3 mb-2">
+                        <!-- Advanced filters — emergency/enterprise -->
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-3 space-y-3">
+                            <p class="text-xs font-bold text-red-700 uppercase tracking-wide flex items-center gap-1">
+                                🚨 Mode Urgence — Filtres Avancés
+                            </p>
+
+                            <!-- Quick presets -->
+                            <div>
+                                <p class="text-xs text-gray-500 mb-1 font-medium">Ajout rapide :</p>
+                                <div class="flex flex-wrap gap-2" id="quick-presets">
+                                    <button type="button" onclick="fillPreset('police')"
+                                        class="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 transition">
+                                        🚔 Police
+                                    </button>
+                                    <button type="button" onclick="fillPreset('samu')"
+                                        class="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition">
+                                        🚑 SAMU
+                                    </button>
+                                    <button type="button" onclick="fillPreset('pompiers')"
+                                        class="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-orange-600 hover:bg-orange-700 transition">
+                                        🚒 Pompiers
+                                    </button>
+                                    <button type="button" onclick="fillPreset('suspect_truck')"
+                                        class="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-gray-700 hover:bg-gray-800 transition">
+                                        🚛 Camion Suspect
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-500 mb-1">Vehicle Type</label>
-                                    <select name="vehicle_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                                        <option value="any">Any</option>
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">Type de véhicule</label>
+                                    <select name="vehicle_type" id="f_vehicle_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                        <option value="any">Any / Tous</option>
                                         <option value="car">Car / Voiture</option>
                                         <option value="truck">Truck / Camion</option>
                                         <option value="bus">Bus</option>
-                                        <option value="motorcycle">Motorcycle / Moto</option>
+                                        <option value="motorcycle">Moto</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-500 mb-1">Vehicle Color</label>
-                                    <select name="vehicle_color" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                                        <option value="any">Any</option>
-                                        <option value="white">White / Blanc</option>
-                                        <option value="black">Black / Noir</option>
-                                        <option value="silver">Silver / Gris</option>
-                                        <option value="red">Red / Rouge</option>
-                                        <option value="blue">Blue / Bleu</option>
-                                        <option value="yellow">Yellow / Jaune</option>
-                                        <option value="green">Green / Vert</option>
-                                        <option value="orange">Orange</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-2 gap-3 mb-2">
-                                <div>
-                                    <label class="block text-xs font-medium text-gray-500 mb-1">Alert Label</label>
-                                    <input type="text" name="alert_label" placeholder="e.g. Pompiers, SAMU, Police..." class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-medium text-gray-500 mb-1">Priority</label>
-                                    <select name="alert_priority" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                                        <option value="normal">Normal</option>
-                                        <option value="high">High</option>
-                                        <option value="critical">Critical</option>
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">Couleur du véhicule</label>
+                                    <select name="vehicle_color" id="f_vehicle_color" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                        <option value="any">Any / Tous</option>
+                                        <option value="white">⬜ Blanc</option>
+                                        <option value="black">⬛ Noir</option>
+                                        <option value="silver">🔘 Gris/Argent</option>
+                                        <option value="red">🔴 Rouge</option>
+                                        <option value="blue">🔵 Bleu</option>
+                                        <option value="yellow">🟡 Jaune</option>
+                                        <option value="green">🟢 Vert</option>
+                                        <option value="orange">🟠 Orange</option>
                                     </select>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <input type="checkbox" id="match_plate_toggle" name="match_plate" value="0" class="w-4 h-4">
-                                <label for="match_plate_toggle" class="text-xs text-gray-600">
-                                    <strong>Type/Color only</strong> — trigger without plate match (e.g. any red truck)
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">Label d'alerte</label>
+                                    <input type="text" name="alert_label" id="f_alert_label"
+                                        placeholder="Pompiers, SAMU, Police, Suspect…"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">Priorité</label>
+                                    <select name="alert_priority" id="f_alert_priority" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                        <option value="normal">🟡 Normal</option>
+                                        <option value="high">🟠 High</option>
+                                        <option value="critical">🔴 Critical</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="flex items-start gap-2 bg-white border border-orange-200 rounded-lg p-2">
+                                <input type="checkbox" id="match_plate_toggle" name="match_plate" value="0" class="w-4 h-4 mt-0.5">
+                                <label for="match_plate_toggle" class="text-xs text-gray-700">
+                                    <strong>Sans plaque</strong> — déclencher uniquement sur type + couleur
+                                    <span class="text-gray-400">(ex: n'importe quel camion rouge)</span>
                                 </label>
                             </div>
                         </div>
@@ -259,7 +290,7 @@
                         {% endif %}
 
                         <button type="submit" class="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition text-sm">
-                            Add Rule / Ajouter
+                            Ajouter la règle
                         </button>
                     </form>
                 </div>
@@ -287,6 +318,37 @@
                             <span class="text-xs text-gray-400">per camera</span>
                         </div>
                     </div>
+
+                    {% if subscription_mode in ['emergency','enterprise'] %}
+                    <!-- Gyrophare detection per camera -->
+                    <div class="mt-4 border-t border-gray-100 pt-4">
+                        <p class="text-xs font-bold text-red-700 uppercase tracking-wide mb-3">
+                            🔵 Détection Gyrophare par Caméra
+                        </p>
+                        {% if cameras %}
+                        <div class="space-y-2">
+                            {% for cam in cameras %}
+                            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-full {% if cam.is_online %}bg-green-400{% else %}bg-gray-300{% endif %}"></span>
+                                    <span class="text-sm font-medium text-gray-700">{{ cam.name }}</span>
+                                </div>
+                                <button type="button"
+                                    id="flash_btn_{{ cam.id }}"
+                                    onclick="toggleFlash({{ cam.id }}, this)"
+                                    class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold transition
+                                        {% if cam.flash_detect_enabled %}bg-blue-100 text-blue-700 border border-blue-300{% else %}bg-gray-100 text-gray-500 border border-gray-300{% endif %}">
+                                    <span class="{% if cam.flash_detect_enabled %}animate-pulse{% endif %}">🔵</span>
+                                    <span id="flash_label_{{ cam.id }}">{% if cam.flash_detect_enabled %}Gyrophare ON{% else %}Gyrophare OFF{% endif %}</span>
+                                </button>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <p class="text-xs text-gray-400">Aucune caméra enregistrée.</p>
+                        {% endif %}
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -466,6 +528,65 @@
                     overlay.remove();
                 }
             }, 180);
+        }
+
+        // ── Quick presets for emergency mode ──
+        const PRESETS = {
+            police: {
+                vehicle_type: 'any', vehicle_color: 'any',
+                alert_label: 'Police', alert_priority: 'critical',
+                match_plate: false
+            },
+            samu: {
+                vehicle_type: 'any', vehicle_color: 'white',
+                alert_label: 'SAMU', alert_priority: 'critical',
+                match_plate: false
+            },
+            pompiers: {
+                vehicle_type: 'truck', vehicle_color: 'red',
+                alert_label: 'Pompiers', alert_priority: 'critical',
+                match_plate: false
+            },
+            suspect_truck: {
+                vehicle_type: 'truck', vehicle_color: 'any',
+                alert_label: 'Camion Suspect', alert_priority: 'high',
+                match_plate: true
+            }
+        };
+
+        function fillPreset(key) {
+            const p = PRESETS[key];
+            if (!p) return;
+            const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+            set('f_vehicle_type',  p.vehicle_type);
+            set('f_vehicle_color', p.vehicle_color);
+            set('f_alert_label',   p.alert_label);
+            set('f_alert_priority',p.alert_priority);
+            const cb = document.getElementById('match_plate_toggle');
+            if (cb) cb.checked = !p.match_plate;  // checkbox = "sans plaque" = value 0
+            // Highlight active preset
+            document.querySelectorAll('#quick-presets button').forEach(b => b.style.opacity = '0.5');
+            event.target.style.opacity = '1';
+        }
+
+        // ── Gyrophare toggle ──
+        function toggleFlash(cameraId, btn) {
+            fetch('/dashboard/toggle_flash/' + cameraId, {method: 'POST'})
+                .then(r => r.json())
+                .then(data => {
+                    const label = document.getElementById('flash_label_' + cameraId);
+                    if (data.enabled) {
+                        btn.className = btn.className.replace('bg-gray-100 text-gray-500 border-gray-300',
+                            'bg-blue-100 text-blue-700 border-blue-300');
+                        btn.querySelector('span:first-child').classList.add('animate-pulse');
+                        if (label) label.textContent = 'Gyrophare ON';
+                    } else {
+                        btn.className = btn.className.replace('bg-blue-100 text-blue-700 border-blue-300',
+                            'bg-gray-100 text-gray-500 border-gray-300');
+                        btn.querySelector('span:first-child').classList.remove('animate-pulse');
+                        if (label) label.textContent = 'Gyrophare OFF';
+                    }
+                });
         }
 
         setInterval(() => {
