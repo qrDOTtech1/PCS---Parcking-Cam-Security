@@ -157,6 +157,45 @@ def create_tables():
     db.create_all()
 
     with db.engine.connect() as conn:
+        # Migration: Fix blacklist.plate_normalized constraint
+        try:
+            # Check if column is NOT NULL
+            cursor = conn.execute(text("PRAGMA table_info(blacklist)"))
+            columns = cursor.fetchall()
+            for col in columns:
+                # col[1] is name, col[3] is notnull
+                if col[1] == "plate_normalized" and col[3] == 1:
+                    logger.info(
+                        "Migrating blacklist table to allow NULL plate_normalized"
+                    )
+                    conn.execute(
+                        text(
+                            "CREATE TABLE blacklist_new ("
+                            "id INTEGER PRIMARY KEY, "
+                            "user_id INTEGER NOT NULL, "
+                            "plate_normalized VARCHAR(20), "
+                            "description VARCHAR(200), "
+                            "is_police BOOLEAN, "
+                            "vehicle_type VARCHAR(20), "
+                            "vehicle_color VARCHAR(20), "
+                            "alert_label VARCHAR(50), "
+                            "alert_priority VARCHAR(10), "
+                            "match_plate BOOLEAN, "
+                            "FOREIGN KEY(user_id) REFERENCES user(id))"
+                        )
+                    )
+                    conn.execute(
+                        text(
+                            "INSERT INTO blacklist_new SELECT id, user_id, plate_normalized, description, is_police, vehicle_type, vehicle_color, alert_label, alert_priority, match_plate FROM blacklist"
+                        )
+                    )
+                    conn.execute(text("DROP TABLE blacklist"))
+                    conn.execute(text("ALTER TABLE blacklist_new RENAME TO blacklist"))
+                    conn.commit()
+                    break
+        except Exception as e:
+            logger.error(f"Migration error: {e}")
+
         try:
             conn.execute(text("ALTER TABLE camera ADD COLUMN config_json TEXT"))
         except:
@@ -1168,7 +1207,7 @@ def add_blacklist():
     match_plate_val = request.form.get("match_plate", "1")
     match_plate = match_plate_val != "0"
 
-    norm_plate = normalize_plate(plate) if plate else None
+    norm_plate = normalize_plate(plate) if plate else ""
 
     # Require either a plate (match_plate mode) or vehicle type/color filter
     if not norm_plate and match_plate:
