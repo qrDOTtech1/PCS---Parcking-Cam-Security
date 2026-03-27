@@ -9,8 +9,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /var/www/vigilance
-
 EXPOSE 5000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--worker-class", "eventlet", "--timeout", "120", "app:app"]
+CMD gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 4 --worker-class eventlet --timeout 120 app:app
