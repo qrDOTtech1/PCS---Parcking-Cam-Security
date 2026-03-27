@@ -2,6 +2,7 @@
 PCS — ANPR Background Worker
 Scanne séquentiellement toutes les caméras actives,
 détecte les plaques via ANPREngine, et déclenche les alertes blacklist.
+Détecte aussi les gyrophares bleus (véhicules d'urgence) par analyse temporelle.
 
 Tourne comme greenlet eventlet dans le même process que Flask.
 """
@@ -9,6 +10,7 @@ Tourne comme greenlet eventlet dans le même process que Flask.
 import os
 import time
 import logging
+import numpy as np
 import eventlet
 import eventlet.tpool
 
@@ -23,6 +25,48 @@ DEDUP_WINDOW = 60  # secondes — même plaque/même cam ignorée pendant 60s
 
 # Timestamp du dernier scan par caméra
 ANPR_LAST_SCAN = {}
+
+# ── Détection gyrophare ─────────────────────────────────────────────────────
+# Historique d'intensité bleue par caméra : liste des N dernières mesures
+BLUE_HISTORY = {}          # camera_id -> list[float]  (couverture bleue 0..1)
+BLUE_HISTORY_SIZE = 8      # nb de frames conservées
+BLUE_FLASH_MIN_MEAN = 0.08 # au moins 8% du cadre bleu en moyenne
+BLUE_FLASH_MIN_VAR  = 0.002 # variance minimale = oscillation (flash vs couleur fixe)
+BLUE_FLASH_DEDUP    = 30   # cooldown entre 2 alertes gyrophare (secondes)
+BLUE_FLASH_LAST     = {}   # camera_id -> timestamp dernière alerte
+
+
+def _measure_blue_coverage(image_bytes):
+    """
+    Mesure la proportion de pixels "bleu gyrophare" dans l'image.
+    Bleu gyrophare : teinte 100-130° (HSV OpenCV 0-180), sat>80, val>80.
+    Retourne une valeur entre 0 et 1.
+    """
+    import cv2
+    arr = np.frombuffer(image_bytes, dtype=np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if img is None:
+        return 0.0
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    lower = np.array([100, 80, 80])
+    upper = np.array([130, 255, 255])
+    mask = cv2.inRange(hsv, lower, upper)
+    total = img.shape[0] * img.shape[1]
+    return float(np.sum(mask > 0)) / total
+
+
+def _check_flash(cam_id):
+    """
+    Analyse l'historique d'intensité bleue pour cam_id.
+    Retourne True si un pattern de clignotement est détecté.
+    """
+    hist = BLUE_HISTORY.get(cam_id, [])
+    if len(hist) < 4:
+        return False
+    arr = np.array(hist)
+    mean_val = float(np.mean(arr))
+    variance = float(np.var(arr))
+    return mean_val >= BLUE_FLASH_MIN_MEAN and variance >= BLUE_FLASH_MIN_VAR
 
 
 def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
@@ -73,6 +117,49 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
 
                         ANPR_LAST_SCAN[cam_id] = time.time()
                         frame_bytes = latest_frames[cam_id]
+
+                        # ── Gyrophare : mesure couverture bleue (rapide, CPU) ──
+                        try:
+                            blue_cov = eventlet.tpool.execute(
+                                _measure_blue_coverage, frame_bytes
+                            )
+                        except Exception:
+                            blue_cov = 0.0
+
+                        if cam_id not in BLUE_HISTORY:
+                            BLUE_HISTORY[cam_id] = []
+                        BLUE_HISTORY[cam_id].append(blue_cov)
+                        if len(BLUE_HISTORY[cam_id]) > BLUE_HISTORY_SIZE:
+                            BLUE_HISTORY[cam_id].pop(0)
+
+                        if _check_flash(cam_id):
+                            last_flash = BLUE_FLASH_LAST.get(cam_id, 0)
+                            if time.time() - last_flash >= BLUE_FLASH_DEDUP:
+                                BLUE_FLASH_LAST[cam_id] = time.time()
+                                logger.info(
+                                    f"[ANPR] Gyrophare bleu détecté cam={camera.name} "
+                                    f"cov={blue_cov:.3f}"
+                                )
+                                alert_msg = (
+                                    f"🚨 ALERTE PCS 🚨\n"
+                                    f"Véhicule d'urgence détecté !\n"
+                                    f"Gyrophare bleu en approche\n"
+                                    f"Caméra: {camera.name}"
+                                )
+                                try:
+                                    send_alert_fn(camera.user_id, alert_msg)
+                                except Exception as e:
+                                    logger.warning(f"[ANPR] Flash alert error: {e}")
+                                socketio.emit(
+                                    "emergency_flash",
+                                    {
+                                        "camera_id": cam_id,
+                                        "camera_name": camera.name,
+                                        "type": "blue_flash",
+                                        "coverage": round(blue_cov, 3),
+                                    },
+                                    room=f"user_{camera.user_id}",
+                                )
 
                         # Inference dans un vrai thread OS (eventlet.tpool)
                         try:

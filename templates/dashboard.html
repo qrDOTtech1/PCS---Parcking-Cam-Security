@@ -425,10 +425,48 @@
         {% endfor %}
 
         socket.on('threat_alert', function(data) {
-            if (confirm('THREAT ALERT!\nPlate: ' + data.plate + '\nCamera: ' + data.camera_name + '\n\nView details?')) {
+            const priority = data.priority || 'normal';
+            const label = data.label || 'THREAT ALERT';
+            const icon = priority === 'critical' ? '🔴' : priority === 'high' ? '🟠' : '🟡';
+            const msg = icon + ' ' + label + '\nPlate: ' + data.plate +
+                '\nCamera: ' + data.camera_name +
+                '\nReason: ' + data.reason +
+                '\n\nView camera?';
+            showFlashOverlay(priority === 'critical' ? '#dc2626' : '#f59e0b', label);
+            if (confirm(msg)) {
                 window.location.href = '/camera/' + data.camera_id;
             }
         });
+
+        socket.on('emergency_flash', function(data) {
+            showFlashOverlay('#1d4ed8', '🚨 GYROPHARE BLEU — ' + data.camera_name);
+            const msg = '🚨 VÉHICULE D\'URGENCE DÉTECTÉ\n\nGyrophare bleu en approche\nCaméra: ' +
+                data.camera_name + '\n\nVoir le flux ?';
+            if (confirm(msg)) {
+                window.location.href = '/camera/' + data.camera_id;
+            }
+        });
+
+        function showFlashOverlay(color, label) {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position:fixed; inset:0; z-index:9999; pointer-events:none;
+                display:flex; align-items:center; justify-content:center;
+                font-size:2rem; font-weight:bold; color:white;
+                text-shadow:0 2px 8px rgba(0,0,0,0.8);
+                background:${color}cc;
+            `;
+            overlay.textContent = label;
+            document.body.appendChild(overlay);
+            let flashes = 0;
+            const interval = setInterval(() => {
+                overlay.style.opacity = overlay.style.opacity === '0' ? '1' : '0';
+                if (++flashes >= 8) {
+                    clearInterval(interval);
+                    overlay.remove();
+                }
+            }, 180);
+        }
 
         setInterval(() => {
             {% for cam in cameras %}
