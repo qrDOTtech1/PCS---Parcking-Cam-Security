@@ -33,7 +33,7 @@ from flask import (
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from models import db, User, Camera, Blacklist, NotificationTarget, SystemConfig
+from models import db, User, Camera, Blacklist, NotificationTarget, SystemConfig, PlateDetection, CameraSummary, AIConfig
 from sqlalchemy import text
 import logging
 
@@ -215,8 +215,12 @@ def create_tables():
         conn.commit()
 
     # Démarrer le worker ANPR (une seule fois, au premier request)
-    from anpr_worker import start_anpr_worker
+    from anpr_worker import start_anpr_worker, BLUE_FLASH_LAST
     start_anpr_worker(app, socketio, LATEST_FRAMES, send_alert)
+
+    # Démarrer le worker de résumés (pour PCS-AI)
+    from summary_worker import start_summary_worker
+    start_summary_worker(app, LATEST_FRAMES, CAMERA_STATUS, BLUE_FLASH_LAST)
 
 
 @app.route("/upload", methods=["POST"])
@@ -1126,6 +1130,166 @@ def del_blacklist(id):
         db.session.commit()
         flash("Plaque effacée.", "success")
     return redirect(url_for("dashboard"))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PCS-AI — API endpoints pour consommation par IA externe
+# Auth : X-API-Key = camera api_key  OU  X-User-Key = user session key (futur)
+# Ces endpoints sont conçus pour être stables — ne pas casser la compatibilité.
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _require_user_api_key(f):
+    """Vérifie X-API-Key appartenant à une caméra — identifie l'utilisateur."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        key = request.headers.get("X-API-Key")
+        if not key:
+            return jsonify({"error": "Missing X-API-Key"}), 401
+        camera = Camera.query.filter_by(api_key=key).first()
+        if not camera:
+            return jsonify({"error": "Invalid API key"}), 401
+        request.ai_user_id = camera.user_id
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route("/api/ai/summaries", methods=["GET"])
+@_require_user_api_key
+def ai_get_summaries():
+    """
+    Retourne les résumés de caméra non encore traités par l'IA.
+    Query params :
+      since=<ISO datetime>   — ne retourner que les résumés créés après cette date
+      camera_id=<int>        — filtrer par caméra
+      limit=<int>            — max résultats (défaut 50)
+      unprocessed_only=1     — seulement ai_processed=False
+    """
+    user_id = request.ai_user_id
+    since_str = request.args.get("since")
+    camera_id = request.args.get("camera_id", type=int)
+    limit = min(request.args.get("limit", 50, type=int), 200)
+    unprocessed_only = request.args.get("unprocessed_only", "0") == "1"
+
+    q = CameraSummary.query.filter_by(user_id=user_id)
+    if camera_id:
+        q = q.filter_by(camera_id=camera_id)
+    if since_str:
+        try:
+            since_dt = datetime.fromisoformat(since_str.replace("Z", "+00:00").replace("+00:00", ""))
+            q = q.filter(CameraSummary.created_at > since_dt)
+        except ValueError:
+            return jsonify({"error": "Invalid 'since' format, use ISO 8601"}), 400
+    if unprocessed_only:
+        q = q.filter_by(ai_processed=False)
+
+    summaries = q.order_by(CameraSummary.created_at.asc()).limit(limit).all()
+
+    return jsonify({
+        "count": len(summaries),
+        "summaries": [
+            {
+                "id": s.id,
+                "camera_id": s.camera_id,
+                "period_start": s.period_start.isoformat(),
+                "period_end": s.period_end.isoformat(),
+                "created_at": s.created_at.isoformat(),
+                "ai_processed": s.ai_processed,
+                "ai_response": s.ai_response or "",
+                "data": json.loads(s.summary_json),
+            }
+            for s in summaries
+        ],
+    }), 200
+
+
+@app.route("/api/ai/latest", methods=["GET"])
+@_require_user_api_key
+def ai_get_latest():
+    """Retourne le dernier résumé pour chaque caméra de l'utilisateur."""
+    user_id = request.ai_user_id
+    cameras = Camera.query.filter_by(user_id=user_id).all()
+    result = []
+    for cam in cameras:
+        s = (CameraSummary.query
+             .filter_by(camera_id=cam.id)
+             .order_by(CameraSummary.created_at.desc())
+             .first())
+        if s:
+            result.append({
+                "camera_id": cam.id,
+                "camera_name": cam.name,
+                "summary_id": s.id,
+                "created_at": s.created_at.isoformat(),
+                "ai_processed": s.ai_processed,
+                "data": json.loads(s.summary_json),
+            })
+    return jsonify({"cameras": result}), 200
+
+
+@app.route("/api/ai/summaries/<int:summary_id>/response", methods=["POST"])
+@_require_user_api_key
+def ai_post_response(summary_id):
+    """
+    L'IA externe écrit son analyse pour un résumé.
+    Body JSON : {"response": "...", "anomalies": [...], "actions": [...]}
+    """
+    user_id = request.ai_user_id
+    s = CameraSummary.query.filter_by(id=summary_id, user_id=user_id).first()
+    if not s:
+        return jsonify({"error": "Summary not found"}), 404
+
+    data = request.json or {}
+    s.ai_response = data.get("response", "")
+    s.ai_processed = True
+
+    # Optionnel : enrichir le summary_json avec les anomalies/actions
+    if "anomalies" in data or "actions" in data:
+        try:
+            existing = json.loads(s.summary_json)
+            if "anomalies" in data:
+                existing["anomalies"] = data["anomalies"]
+            if "actions" in data:
+                existing["ai_actions"] = data["actions"]
+            s.summary_json = json.dumps(existing)
+        except Exception:
+            pass
+
+    db.session.commit()
+    return jsonify({"status": "ok", "summary_id": s.id}), 200
+
+
+@app.route("/api/ai/config", methods=["GET", "POST"])
+@_require_user_api_key
+def ai_config():
+    """Lire / écrire la config IA de l'utilisateur."""
+    user_id = request.ai_user_id
+    cfg = AIConfig.query.filter_by(user_id=user_id).first()
+
+    if request.method == "GET":
+        if not cfg:
+            return jsonify({"configured": False, "summary_interval": 60}), 200
+        return jsonify({
+            "configured": True,
+            "provider": cfg.provider,
+            "webhook_url": cfg.webhook_url,
+            "summary_interval": cfg.summary_interval,
+            "ai_enabled": cfg.ai_enabled,
+        }), 200
+
+    data = request.json or {}
+    if not cfg:
+        cfg = AIConfig(user_id=user_id)
+        db.session.add(cfg)
+    if "provider" in data:
+        cfg.provider = data["provider"]
+    if "webhook_url" in data:
+        cfg.webhook_url = data["webhook_url"]
+    if "summary_interval" in data:
+        cfg.summary_interval = max(30, int(data["summary_interval"]))  # min 30s
+    if "ai_enabled" in data:
+        cfg.ai_enabled = bool(data["ai_enabled"])
+    db.session.commit()
+    return jsonify({"status": "ok", "summary_interval": cfg.summary_interval}), 200
 
 
 if __name__ == "__main__":

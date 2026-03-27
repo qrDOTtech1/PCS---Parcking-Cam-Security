@@ -114,3 +114,40 @@ class SystemConfig(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     key_name = db.Column(db.String(50), nullable=False)
     key_value = db.Column(db.String(255))
+
+
+class CameraSummary(db.Model):
+    """
+    Résumé périodique d'une caméra — consommé par les futures IA PCS-AI.
+
+    Chaque enregistrement couvre une fenêtre de temps (period_start → period_end).
+    L'IA externe poll GET /api/ai/summaries?since=<iso> pour récupérer les nouveaux.
+    Elle peut écrire son analyse dans ai_response et marquer ai_processed=True.
+    """
+    id           = db.Column(db.Integer, primary_key=True)
+    user_id      = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    camera_id    = db.Column(db.Integer, db.ForeignKey("camera.id"), nullable=False)
+    period_start = db.Column(db.DateTime, nullable=False)
+    period_end   = db.Column(db.DateTime, nullable=False)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    summary_json = db.Column(db.Text, nullable=False)   # JSON structuré (voir ci-dessous)
+    ai_processed = db.Column(db.Boolean, default=False) # IA a lu ce résumé
+    ai_response  = db.Column(db.Text, default="")       # Analyse écrite par l'IA
+
+    camera = db.relationship("Camera", backref="summaries")
+
+
+class AIConfig(db.Model):
+    """
+    Configuration IA par utilisateur — pour le futur produit PCS-AI.
+    Stocke le fournisseur, la clé API et l'intervalle de résumé souhaité.
+    Non utilisé activement — prêt pour branchement futur.
+    """
+    id                = db.Column(db.Integer, primary_key=True)
+    user_id           = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True)
+    provider          = db.Column(db.String(30), default="claude")   # claude/openai/custom
+    api_key_encrypted = db.Column(db.Text, default="")               # clé API chiffrée (futur)
+    webhook_url       = db.Column(db.String(255), default="")        # URL push optionnel
+    summary_interval  = db.Column(db.Integer, default=60)            # secondes entre résumés
+    ai_enabled        = db.Column(db.Boolean, default=False)
+    created_at        = db.Column(db.DateTime, default=datetime.utcnow)
