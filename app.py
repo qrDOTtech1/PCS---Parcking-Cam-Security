@@ -180,6 +180,26 @@ def create_tables():
             )
         except:
             pass
+        try:
+            conn.execute(text("ALTER TABLE blacklist ADD COLUMN vehicle_type VARCHAR(20) DEFAULT 'any'"))
+        except:
+            pass
+        try:
+            conn.execute(text("ALTER TABLE blacklist ADD COLUMN vehicle_color VARCHAR(20) DEFAULT 'any'"))
+        except:
+            pass
+        try:
+            conn.execute(text("ALTER TABLE blacklist ADD COLUMN alert_label VARCHAR(50) DEFAULT ''"))
+        except:
+            pass
+        try:
+            conn.execute(text("ALTER TABLE blacklist ADD COLUMN alert_priority VARCHAR(10) DEFAULT 'normal'"))
+        except:
+            pass
+        try:
+            conn.execute(text("ALTER TABLE blacklist ADD COLUMN match_plate INTEGER DEFAULT 1"))
+        except:
+            pass
         conn.commit()
 
     # Démarrer le worker ANPR (une seule fois, au premier request)
@@ -887,12 +907,16 @@ def dashboard():
             (now - cam.last_seen).total_seconds() < 600 if cam.last_seen else False
         )
 
+    user = User.query.get(user_id)
+    subscription_mode = getattr(user, "subscription_mode", "standard") or "standard"
+
     return render_template(
         "dashboard.html",
         username=session["username"],
         cameras=cameras,
         targets=targets,
         blacklist=blacklist,
+        subscription_mode=subscription_mode,
     )
 
 
@@ -1004,20 +1028,39 @@ def add_blacklist():
     plate = request.form.get("plate")
     desc = request.form.get("desc")
 
-    if plate:
-        norm_plate = normalize_plate(plate)
-        if not Blacklist.query.filter_by(
-            user_id=user_id, plate_normalized=norm_plate
-        ).first():
-            new_bl = Blacklist(
-                user_id=user_id,
-                plate_normalized=norm_plate,
-                description=desc,
-                is_police=True,
-            )
-            db.session.add(new_bl)
-            db.session.commit()
-            flash("Plaque ajoutée à la base de données.", "success")
+    vehicle_type = request.form.get("vehicle_type", "any")
+    vehicle_color = request.form.get("vehicle_color", "any")
+    alert_label = request.form.get("alert_label", "").strip()
+    alert_priority = request.form.get("alert_priority", "normal")
+    match_plate_val = request.form.get("match_plate", "1")
+    match_plate = match_plate_val != "0"
+
+    norm_plate = normalize_plate(plate) if plate else None
+
+    # Require either a plate (match_plate mode) or vehicle type/color filter
+    if not norm_plate and match_plate:
+        flash("Veuillez saisir une plaque ou désactiver 'Match par plaque'.", "error")
+        return redirect(url_for("dashboard"))
+
+    if norm_plate and match_plate:
+        if Blacklist.query.filter_by(user_id=user_id, plate_normalized=norm_plate).first():
+            flash("Cette plaque est déjà dans la base de données.", "error")
+            return redirect(url_for("dashboard"))
+
+    new_bl = Blacklist(
+        user_id=user_id,
+        plate_normalized=norm_plate,
+        description=desc,
+        is_police=True,
+        vehicle_type=vehicle_type,
+        vehicle_color=vehicle_color,
+        alert_label=alert_label,
+        alert_priority=alert_priority,
+        match_plate=match_plate,
+    )
+    db.session.add(new_bl)
+    db.session.commit()
+    flash("Règle de surveillance ajoutée.", "success")
 
     return redirect(url_for("dashboard"))
 

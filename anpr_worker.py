@@ -87,47 +87,80 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
 
                         for detection in results:
                             plate = detection.get("plate")
-                            if not plate:
-                                continue
                             confidence = detection.get("confidence", 0)
+                            veh_type = detection.get("vehicle_type", "unknown")
+                            veh_color = detection.get("vehicle_color", "unknown")
 
-                            # Déduplique
-                            dedup_key = (cam_id, plate)
+                            # Clé déduplique : plaque OU (type+couleur) si pas de plaque
+                            dedup_key = (cam_id, plate) if plate else (cam_id, veh_type, veh_color)
                             last_seen = RECENT_DETECTIONS.get(dedup_key, 0)
                             if time.time() - last_seen < DEDUP_WINDOW:
                                 continue
                             RECENT_DETECTIONS[dedup_key] = time.time()
 
-                            # Log en DB
-                            blacklisted = Blacklist.query.filter_by(
-                                user_id=camera.user_id,
-                                plate_normalized=plate,
-                            ).first()
-                            is_threat = blacklisted is not None
+                            # --- Chercher une correspondance blacklist ---
+                            matched_rule = None
 
-                            det = PlateDetection(
-                                user_id=camera.user_id,
-                                camera_id=cam_id,
-                                plate_normalized=plate,
-                                confidence=confidence,
-                                is_threat=is_threat,
-                            )
-                            db.session.add(det)
-                            db.session.commit()
+                            # 1. Correspondance par plaque (règles standard)
+                            if plate:
+                                rule = Blacklist.query.filter_by(
+                                    user_id=camera.user_id,
+                                    plate_normalized=plate,
+                                    match_plate=True,
+                                ).first()
+                                if rule:
+                                    # Vérifier aussi vehicle_type et vehicle_color si spécifiés
+                                    type_ok = (not rule.vehicle_type or rule.vehicle_type == "any" or rule.vehicle_type == veh_type)
+                                    color_ok = (not rule.vehicle_color or rule.vehicle_color == "any" or rule.vehicle_color == veh_color)
+                                    if type_ok and color_ok:
+                                        matched_rule = rule
+
+                            # 2. Correspondance par type+couleur sans plaque (mode urgence)
+                            if not matched_rule:
+                                type_color_rules = Blacklist.query.filter_by(
+                                    user_id=camera.user_id,
+                                    match_plate=False,
+                                ).all()
+                                for rule in type_color_rules:
+                                    type_ok = (not rule.vehicle_type or rule.vehicle_type == "any" or rule.vehicle_type == veh_type)
+                                    color_ok = (not rule.vehicle_color or rule.vehicle_color == "any" or rule.vehicle_color == veh_color)
+                                    if type_ok and color_ok:
+                                        matched_rule = rule
+                                        break
+
+                            is_threat = matched_rule is not None
+
+                            # Log en DB (uniquement si plaque trouvée ou menace détectée)
+                            if plate or is_threat:
+                                det = PlateDetection(
+                                    user_id=camera.user_id,
+                                    camera_id=cam_id,
+                                    plate_normalized=plate or f"{veh_type}:{veh_color}",
+                                    confidence=confidence,
+                                    is_threat=is_threat,
+                                )
+                                db.session.add(det)
+                                db.session.commit()
 
                             logger.info(
-                                f"[ANPR] Plate={plate} cam={camera.name} "
+                                f"[ANPR] cam={camera.name} plate={plate} "
+                                f"type={veh_type} color={veh_color} "
                                 f"conf={confidence:.2f} threat={is_threat}"
                             )
 
                             # Alerte si blacklisté
                             if is_threat:
+                                label = (matched_rule.alert_label or "Véhicule Suspect").strip()
+                                priority = matched_rule.alert_priority or "normal"
+                                priority_icon = {"critical": "🔴", "high": "🟠", "normal": "🟡"}.get(priority, "🟡")
+
+                                plate_line = f"Plaque: {plate}" if plate else f"Type: {veh_type} | Couleur: {veh_color}"
                                 alert_msg = (
-                                    f"🚨 ALERTE PCS 🚨\n"
-                                    f"Véhicule Suspect!\n"
-                                    f"Plaque: {plate}\n"
+                                    f"{priority_icon} ALERTE PCS {priority_icon}\n"
+                                    f"{label}!\n"
+                                    f"{plate_line}\n"
                                     f"Caméra: {camera.name}\n"
-                                    f"Raison: {blacklisted.description}"
+                                    f"Raison: {matched_rule.description}"
                                 )
                                 try:
                                     send_alert_fn(camera.user_id, alert_msg)
@@ -139,8 +172,12 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                                     {
                                         "camera_id": cam_id,
                                         "camera_name": camera.name,
-                                        "plate": plate,
-                                        "reason": blacklisted.description,
+                                        "plate": plate or f"{veh_type}/{veh_color}",
+                                        "vehicle_type": veh_type,
+                                        "vehicle_color": veh_color,
+                                        "label": label,
+                                        "priority": priority,
+                                        "reason": matched_rule.description,
                                     },
                                     room=f"user_{camera.user_id}",
                                 )

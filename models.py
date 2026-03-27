@@ -71,9 +71,15 @@ class Camera(db.Model):
 class Blacklist(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    plate_normalized = db.Column(db.String(20), nullable=False)
+    plate_normalized = db.Column(db.String(20), nullable=True)   # nullable: type/color-only rules
     description = db.Column(db.String(200))
     is_police = db.Column(db.Boolean, default=False)
+    # Advanced vehicle filters (emergency / enterprise modes)
+    vehicle_type = db.Column(db.String(20), default="any")   # any/car/truck/bus/motorcycle
+    vehicle_color = db.Column(db.String(20), default="any")  # any/red/blue/white/black/silver/yellow/green/orange
+    alert_label = db.Column(db.String(50), default="")       # e.g. "Police", "SAMU", "Pompiers"
+    alert_priority = db.Column(db.String(10), default="normal")  # normal/high/critical
+    match_plate = db.Column(db.Boolean, default=True)        # False = type+color only (no plate)
 
 
 class NotificationTarget(db.Model):
