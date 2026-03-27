@@ -168,6 +168,18 @@ def create_tables():
             )
         except:
             pass
+        try:
+            conn.execute(
+                text("ALTER TABLE user ADD COLUMN subscription_mode VARCHAR(30) DEFAULT 'standard'")
+            )
+        except:
+            pass
+        try:
+            conn.execute(
+                text("ALTER TABLE user ADD COLUMN max_cameras INTEGER DEFAULT 3")
+            )
+        except:
+            pass
         conn.commit()
 
     # Démarrer le worker ANPR (une seule fois, au premier request)
@@ -727,6 +739,8 @@ def api_admin_users():
                 "subscription_end": u.subscription_end.strftime("%Y-%m-%d")
                 if u.subscription_end
                 else "Unlimited",
+                "subscription_mode": getattr(u, "subscription_mode", "standard") or "standard",
+                "max_cameras": getattr(u, "max_cameras", 3) or 3,
             }
             for u in users
         ]
@@ -782,17 +796,34 @@ def api_admin_user_sub(username):
 
     data = request.json or {}
     days = data.get("days", 30)
+    mode = data.get("mode")
+    max_cameras = data.get("max_cameras")
 
-    if not user.subscription_end or user.subscription_end < datetime.utcnow():
-        user.subscription_end = datetime.utcnow() + timedelta(days=days)
-    else:
-        user.subscription_end = user.subscription_end + timedelta(days=days)
+    if days:
+        if not user.subscription_end or user.subscription_end < datetime.utcnow():
+            user.subscription_end = datetime.utcnow() + timedelta(days=days)
+        else:
+            user.subscription_end = user.subscription_end + timedelta(days=days)
+
+    if mode:
+        user.subscription_mode = mode
+    if max_cameras is not None:
+        user.max_cameras = int(max_cameras)
 
     db.session.commit()
+
+    msg_parts = []
+    if days:
+        msg_parts.append(f"Valid until {user.subscription_end.strftime('%Y-%m-%d')}")
+    if mode:
+        msg_parts.append(f"Mode: {mode}")
+    if max_cameras is not None:
+        msg_parts.append(f"Max cameras: {max_cameras}")
+
     return jsonify(
         {
             "status": "success",
-            "message": f"Subscription extended to {user.subscription_end.strftime('%Y-%m-%d')}",
+            "message": " | ".join(msg_parts) if msg_parts else "Updated",
         }
     ), 200
 

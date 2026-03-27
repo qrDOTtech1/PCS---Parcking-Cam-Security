@@ -11,6 +11,8 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     subscription_end = db.Column(db.DateTime, nullable=True)
+    subscription_mode = db.Column(db.String(30), default="standard")
+    max_cameras = db.Column(db.Integer, default=3)
 
     cameras = db.relationship(
         "Camera", backref="owner", lazy=True, cascade="all, delete-orphan"
