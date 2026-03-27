@@ -365,12 +365,14 @@
                         </p>
                         {% if cameras %}
                         <div class="space-y-2">
-                            {% for cam in cameras %}
-                            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
-                                <div class="flex items-center gap-2">
-                                    <span class="w-2 h-2 rounded-full {% if cam.is_online %}bg-green-400{% else %}bg-gray-300{% endif %}"></span>
-                                    <span class="text-sm font-medium text-gray-700">{{ cam.name }}</span>
-                                </div>
+                        {% for cam in cameras %}
+                        <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                            <div class="flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full {% if cam.is_online %}bg-green-400{% else %}bg-gray-300{% endif %}"></span>
+                                <span class="text-sm font-medium text-gray-700">{{ cam.name }}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <a href="{{ url_for('camera_management', camera_id=cam.id) }}" class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded">Stats</a>
                                 <button type="button"
                                     id="flash_btn_{{ cam.id }}"
                                     onclick="toggleFlash({{ cam.id }}, this)"
@@ -380,7 +382,9 @@
                                     <span id="flash_label_{{ cam.id }}">{% if cam.flash_detect_enabled %}Gyrophare ON{% else %}Gyrophare OFF{% endif %}</span>
                                 </button>
                             </div>
-                            {% endfor %}
+                        </div>
+                        {% endfor %}
+
                         </div>
                         {% else %}
                         <p class="text-xs text-gray-400">Aucune caméra enregistrée.</p>

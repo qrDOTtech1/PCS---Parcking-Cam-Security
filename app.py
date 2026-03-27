@@ -122,7 +122,7 @@ def normalize_plate(plate_str):
 
 def send_alert(user_id, message):
     targets = NotificationTarget.query.filter_by(user_id=user_id, is_active=True).all()
-    encoded_message = urllib.parse.quote(message)
+    encoded_message = urllib.parse.quote_plus(message)
     for target in targets:
         if target.platform == "signal" and target.api_key:
             if target.api_key.startswith("http"):
