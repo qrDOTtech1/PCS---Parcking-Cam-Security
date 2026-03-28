@@ -246,7 +246,7 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                             best_iou = 0.0
                             best_track = None
                             for t in current_tracks:
-                                iou = compute_iou(bbox, t.get("bbox"))
+                                iou = compute_iou(bbox, t.get("bbox", [0, 0, 0, 0]))
                                 if iou > best_iou:
                                     best_iou = iou
                                     best_track = t
