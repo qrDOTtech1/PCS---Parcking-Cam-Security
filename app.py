@@ -137,7 +137,7 @@ def send_alert(user_id, message, gif_bytes=None):
                 url = f"{base_url}&text={encoded_message}"
                 phone_display = "URL Signal"
             elif target.phone_number:
-                url = f"https://api.callmebot.com/signal/send.php?phone={target.phone_number}&apikey={target.api_key}&text={encoded_message}"
+                url = f"https://signal.callmebot.com/signal/send.php?phone={target.phone_number}&apikey={target.api_key}&text={encoded_message}"
                 phone_display = target.phone_number
             else:
                 continue
@@ -150,7 +150,9 @@ def send_alert(user_id, message, gif_bytes=None):
         elif target.platform == "telegram" and target.bot_token and target.chat_id:
             try:
                 if gif_bytes:
-                    url = f"https://api.telegram.org/bot{target.bot_token}/sendAnimation"
+                    url = (
+                        f"https://api.telegram.org/bot{target.bot_token}/sendAnimation"
+                    )
                     files = {"animation": ("alert.gif", gif_bytes, "image/gif")}
                     data = {"chat_id": target.chat_id, "caption": message[:1024]}
                     requests.post(url, data=data, files=files, timeout=10)
@@ -381,30 +383,47 @@ def create_tables():
             ("detected_class", "VARCHAR(50) DEFAULT ''"),
         ]:
             try:
-                conn.execute(text(f"ALTER TABLE plate_detection ADD COLUMN {col} {defn}"))
+                conn.execute(
+                    text(f"ALTER TABLE plate_detection ADD COLUMN {col} {defn}")
+                )
             except Exception:
                 pass
 
         # Migration: anciens SystemConfig roboflow → RoboflowModel (une seule fois)
         try:
-            migrated = conn.execute(text(
-                "SELECT sc1.user_id, sc1.key_value, sc2.key_value "
-                "FROM system_config sc1 "
-                "JOIN system_config sc2 ON sc1.user_id = sc2.user_id "
-                "WHERE sc1.key_name = 'roboflow_api_key' AND sc2.key_name = 'roboflow_model' "
-                "AND sc1.key_value != '' AND sc2.key_value != ''"
-            )).fetchall()
+            migrated = conn.execute(
+                text(
+                    "SELECT sc1.user_id, sc1.key_value, sc2.key_value "
+                    "FROM system_config sc1 "
+                    "JOIN system_config sc2 ON sc1.user_id = sc2.user_id "
+                    "WHERE sc1.key_name = 'roboflow_api_key' AND sc2.key_name = 'roboflow_model' "
+                    "AND sc1.key_value != '' AND sc2.key_value != ''"
+                )
+            ).fetchall()
             for row in migrated:
                 uid, api_key_val, model_val = row
-                existing = conn.execute(text(
-                    "SELECT id FROM roboflow_model WHERE user_id = :uid AND model_endpoint = :ep"
-                ), {"uid": uid, "ep": model_val}).fetchone()
+                existing = conn.execute(
+                    text(
+                        "SELECT id FROM roboflow_model WHERE user_id = :uid AND model_endpoint = :ep"
+                    ),
+                    {"uid": uid, "ep": model_val},
+                ).fetchone()
                 if not existing:
-                    conn.execute(text(
-                        "INSERT INTO roboflow_model (user_id, name, model_endpoint, api_key, alert_mode) "
-                        "VALUES (:uid, :name, :ep, :key, 'log_only')"
-                    ), {"uid": uid, "name": "Modèle principal", "ep": model_val, "key": api_key_val})
-                    logger.info(f"[DB] Migrated SystemConfig Roboflow → RoboflowModel for user {uid}")
+                    conn.execute(
+                        text(
+                            "INSERT INTO roboflow_model (user_id, name, model_endpoint, api_key, alert_mode) "
+                            "VALUES (:uid, :name, :ep, :key, 'log_only')"
+                        ),
+                        {
+                            "uid": uid,
+                            "name": "Modèle principal",
+                            "ep": model_val,
+                            "key": api_key_val,
+                        },
+                    )
+                    logger.info(
+                        f"[DB] Migrated SystemConfig Roboflow → RoboflowModel for user {uid}"
+                    )
         except Exception as e:
             logger.warning(f"[DB] Roboflow migration: {e}")
 
@@ -413,7 +432,9 @@ def create_tables():
     # Démarrer le worker ANPR (une seule fois, au premier request)
     from anpr_worker import start_anpr_worker, BLUE_FLASH_LAST
 
-    start_anpr_worker(app, socketio, LATEST_FRAMES, send_alert, frame_buffers=FRAME_BUFFERS)
+    start_anpr_worker(
+        app, socketio, LATEST_FRAMES, send_alert, frame_buffers=FRAME_BUFFERS
+    )
 
     # Démarrer le worker de résumés (pour PCS-AI)
     from summary_worker import start_summary_worker
@@ -440,7 +461,7 @@ def get_max_notifications(user):
         "pro": 5,
         "emergency": 20,
         "enterprise": -1,  # unlimited
-        "custom": -1,      # unlimited
+        "custom": -1,  # unlimited
     }
     return limits.get(mode, 2)
 
@@ -1354,7 +1375,9 @@ def roboflow_add():
     current_count = RoboflowModel.query.filter_by(user_id=user_id).count()
 
     if max_models != -1 and current_count >= max_models:
-        flash(f"Limite atteinte ({max_models} modèle(s) pour votre abonnement).", "error")
+        flash(
+            f"Limite atteinte ({max_models} modèle(s) pour votre abonnement).", "error"
+        )
         return redirect(url_for("dashboard"))
 
     name = request.form.get("name", "").strip()
@@ -1377,7 +1400,9 @@ def roboflow_add():
         alert_priority=alert_priority,
     )
     if alert_mode == "alert_on_classes" and alert_classes:
-        model.set_alert_classes([c.strip() for c in alert_classes.split(",") if c.strip()])
+        model.set_alert_classes(
+            [c.strip() for c in alert_classes.split(",") if c.strip()]
+        )
     db.session.add(model)
     db.session.commit()
     flash(f"Modèle '{name}' ajouté.", "success")
@@ -1387,20 +1412,28 @@ def roboflow_add():
 @app.route("/dashboard/roboflow/<int:model_id>/update", methods=["POST"])
 @require_auth
 def roboflow_update(model_id):
-    model = RoboflowModel.query.filter_by(id=model_id, user_id=session["user_id"]).first()
+    model = RoboflowModel.query.filter_by(
+        id=model_id, user_id=session["user_id"]
+    ).first()
     if not model:
         flash("Modèle non trouvé.", "error")
         return redirect(url_for("dashboard"))
 
     model.name = request.form.get("name", model.name).strip()
-    model.model_endpoint = request.form.get("model_endpoint", model.model_endpoint).strip()
+    model.model_endpoint = request.form.get(
+        "model_endpoint", model.model_endpoint
+    ).strip()
     new_key = request.form.get("api_key", "").strip()
     if new_key:
         model.api_key = new_key
     model.alert_mode = request.form.get("alert_mode", model.alert_mode)
     model.alert_priority = request.form.get("alert_priority", model.alert_priority)
     alert_classes = request.form.get("alert_classes", "").strip()
-    model.set_alert_classes([c.strip() for c in alert_classes.split(",") if c.strip()] if alert_classes else [])
+    model.set_alert_classes(
+        [c.strip() for c in alert_classes.split(",") if c.strip()]
+        if alert_classes
+        else []
+    )
     db.session.commit()
     flash(f"Modèle '{model.name}' mis à jour.", "success")
     return redirect(url_for("dashboard"))
@@ -1409,7 +1442,9 @@ def roboflow_update(model_id):
 @app.route("/dashboard/roboflow/<int:model_id>/delete", methods=["POST"])
 @require_auth
 def roboflow_delete(model_id):
-    model = RoboflowModel.query.filter_by(id=model_id, user_id=session["user_id"]).first()
+    model = RoboflowModel.query.filter_by(
+        id=model_id, user_id=session["user_id"]
+    ).first()
     if model:
         name = model.name
         db.session.delete(model)
@@ -1421,11 +1456,16 @@ def roboflow_delete(model_id):
 @app.route("/dashboard/roboflow/<int:model_id>/toggle", methods=["POST"])
 @require_auth
 def roboflow_toggle(model_id):
-    model = RoboflowModel.query.filter_by(id=model_id, user_id=session["user_id"]).first()
+    model = RoboflowModel.query.filter_by(
+        id=model_id, user_id=session["user_id"]
+    ).first()
     if model:
         model.is_active = not model.is_active
         db.session.commit()
-        flash(f"Modèle '{model.name}' {'activé' if model.is_active else 'désactivé'}.", "success")
+        flash(
+            f"Modèle '{model.name}' {'activé' if model.is_active else 'désactivé'}.",
+            "success",
+        )
     return redirect(url_for("dashboard"))
 
 
@@ -1473,7 +1513,9 @@ def add_target():
     count = NotificationTarget.query.filter_by(user_id=user_id).count()
     max_n = get_max_notifications(user)
     if max_n != -1 and count >= max_n:
-        flash(f"Limite de canaux atteinte ({max_n} max pour votre abonnement).", "error")
+        flash(
+            f"Limite de canaux atteinte ({max_n} max pour votre abonnement).", "error"
+        )
         return redirect(url_for("dashboard"))
 
     name = request.form.get("name")
