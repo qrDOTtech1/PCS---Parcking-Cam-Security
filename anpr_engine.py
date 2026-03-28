@@ -71,10 +71,6 @@ class ANPREngine:
         self._ocr = easyocr.Reader(["en"], gpu=False, verbose=False)
         logger.info("[ANPR] EasyOCR loaded.")
 
-        # Cache du client Roboflow — instancié UNE seule fois par clé API
-        # (clé → InferenceHTTPClient) pour éviter la reconnexion TLS à chaque frame
-        self._rf_clients = {}
-
         logger.info("[ANPR] Engine ready.")
 
     # COCO class id → readable vehicle type
@@ -131,6 +127,117 @@ class ANPREngine:
         if denom <= 0:
             return 0.0
         return interArea / denom
+
+    def _find_plate_crop(self, vehicle_crop):
+        """
+        Cherche la région plaque dans un crop véhicule.
+
+        Exploite le fait que les plaques FR/EU ont un fond BLANC/GRIS CLAIR
+        avec des caractères NOIRS. On cherche un rectangle blanc dans le
+        tiers inférieur du véhicule (là où se trouve la plaque avant/arrière).
+
+        Retourne le crop plaque recadré, ou None si non trouvé.
+        """
+        import cv2
+
+        h, w = vehicle_crop.shape[:2]
+        if h < 30 or w < 60:
+            return None
+
+        # Chercher dans le tiers inférieur du véhicule (plaque avant/arrière)
+        y_start = int(h * 0.5)
+        search = vehicle_crop[y_start:, :]
+        sh, sw = search.shape[:2]
+
+        gray = cv2.cvtColor(search, cv2.COLOR_BGR2GRAY)
+
+        # Binarisation : pixels clairs (fond plaque blanc/gris > 150)
+        _, white_mask = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+
+        # Fermeture morphologique pour remplir les trous créés par les caractères noirs
+        # Kernel horizontal large pour connecter les lettres entre elles
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 6))
+        closed = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, kernel)
+
+        contours, _ = cv2.findContours(
+            closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        best_crop = None
+        best_score = 0.0
+
+        for cnt in contours:
+            x, y, cw, ch = cv2.boundingRect(cnt)
+            if cw < 50 or ch < 10:
+                continue
+
+            aspect = cw / max(ch, 1)
+            # Plaque FR : 520×110mm → ratio ≈ 4.7
+            # Plaque EU moto : plus court (~3.0), camion (~5.5)
+            if not (2.5 <= aspect <= 7.0):
+                continue
+
+            area = cw * ch
+            # Doit représenter au moins 3% de la zone de recherche
+            if area < (sw * sh * 0.03):
+                continue
+
+            # Score : récompenser le ratio proche de 4.7 et la grande surface
+            ratio_score = 1.0 / (abs(aspect - 4.7) + 0.5)
+            score = ratio_score * area
+            if score > best_score:
+                best_score = score
+                # Petit padding autour du crop plaque pour l'OCR
+                pad = 4
+                x1p = max(0, x - pad)
+                y1p = max(0, y - pad)
+                x2p = min(sw, x + cw + pad)
+                y2p = min(sh, y + ch + pad)
+                best_crop = search[y1p:y2p, x1p:x2p]
+
+        return best_crop
+
+    def _call_roboflow(self, api_key, model_id, image_bytes, timeout=6):
+        """
+        Appelle l'API Roboflow Serverless via urllib (PAS requests/inference_sdk).
+
+        - Endpoint : serverless.roboflow.com (plus fiable que detect.roboflow.com)
+        - Méthode  : POST base64 du JPEG brut (même principe que la commande curl)
+        - DNS fix  : swap temporaire socket.getaddrinfo → version OS non monkey-patchée
+        - Pas de dépendance externe : stdlib uniquement (urllib, ssl, base64, json)
+
+        Retourne le dict JSON Roboflow ou None en cas d'erreur.
+        """
+        import base64
+        import json
+        import ssl
+        import urllib.request
+
+        img_b64 = base64.b64encode(image_bytes).decode("ascii")
+        url = f"https://serverless.roboflow.com/{model_id}?api_key={api_key}"
+
+        req = urllib.request.Request(
+            url,
+            data=img_b64.encode("ascii"),
+            method="POST",
+            headers={"Content-Type": "text/plain"},
+        )
+
+        ctx = ssl.create_default_context()  # vérifie le certificat TLS
+
+        # Bypass DNS eventlet : swap socket.getaddrinfo → vrai OS resolver
+        if _REAL_GETADDRINFO is not None:
+            with _DNS_FIX_LOCK:
+                old_gai = socket.getaddrinfo
+                socket.getaddrinfo = _REAL_GETADDRINFO
+                try:
+                    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+                        return json.loads(resp.read())
+                finally:
+                    socket.getaddrinfo = old_gai
+        else:
+            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+                return json.loads(resp.read())
 
     def detect_plates(self, image_bytes, roboflow_key=None, roboflow_model=None):
         """
@@ -205,25 +312,38 @@ class ANPREngine:
         for crop, bbox, veh_conf, vehicle_type, vehicle_color in vehicle_crops:
             plate_found = None
             best_conf = 0.0
-            try:
-                ocr_results = self._ocr.readtext(crop, detail=1)
-            except Exception as e:
-                logger.warning(f"[ANPR] OCR error: {e}")
-                ocr_results = []
 
-            for _, text, conf in ocr_results:
-                if conf < 0.3:
-                    continue
-                normalized = normalize_plate(text)
-                if len(normalized) < 4 or len(normalized) > 12:
-                    continue
-                has_digit = any(c.isdigit() for c in normalized)
-                has_alpha = any(c.isalpha() for c in normalized)
-                if not (has_digit and has_alpha):
-                    continue
-                if conf > best_conf:
-                    plate_found = normalized
-                    best_conf = conf
+            # Tentative 1 : OCR sur le crop plaque isolé (fond blanc, aspect ratio plaque)
+            # → plus précis car EasyOCR ne se perd pas dans la carrosserie
+            plate_crop = self._find_plate_crop(crop)
+            ocr_targets = []
+            if plate_crop is not None and plate_crop.size > 0:
+                ocr_targets.append(("plate_crop", plate_crop))
+            # Tentative 2 : OCR sur le crop véhicule entier (fallback)
+            ocr_targets.append(("full_crop", crop))
+
+            for target_name, target_img in ocr_targets:
+                if plate_found:
+                    break  # déjà trouvé sur le crop plaque, on s'arrête
+                try:
+                    ocr_results = self._ocr.readtext(target_img, detail=1)
+                except Exception as e:
+                    logger.warning(f"[ANPR] OCR error ({target_name}): {e}")
+                    ocr_results = []
+
+                for _, text, conf in ocr_results:
+                    if conf < 0.3:
+                        continue
+                    normalized = normalize_plate(text)
+                    if len(normalized) < 4 or len(normalized) > 12:
+                        continue
+                    has_digit = any(c.isdigit() for c in normalized)
+                    has_alpha = any(c.isalpha() for c in normalized)
+                    if not (has_digit and has_alpha):
+                        continue
+                    if conf > best_conf:
+                        plate_found = normalized
+                        best_conf = conf
 
             detections.append(
                 {
@@ -255,46 +375,11 @@ class ANPREngine:
 
         final.extend(seen_plates.values())
 
-        # Étape 3 : Intégration Roboflow (Modèle Expert Custom) via InferenceHTTPClient
+        # Étape 3 : Intégration Roboflow Serverless (urllib + base64, pas inference_sdk)
         # ⚠️  Appelé UNIQUEMENT si YOLO a trouvé au moins un vrai véhicule.
-        #     Si YOLO ne voit rien, inutile d'interroger Roboflow (économie ~90% appels).
         if roboflow_key and roboflow_model and yolo_found_vehicles:
             try:
-                from inference_sdk import InferenceHTTPClient
-
-                # ── Client mis en cache par clé API (évite reconnexion TLS à chaque frame) ──
-                if roboflow_key not in self._rf_clients:
-                    logger.info("[ANPR] Initializing Roboflow client (first use)")
-                    new_client = InferenceHTTPClient(
-                        api_url="https://detect.roboflow.com",
-                        api_key=roboflow_key,
-                    )
-                    # Timeout explicite sur la session requests sous-jacente
-                    # pour ne pas bloquer le tpool thread si Railway a des problèmes DNS
-                    try:
-                        new_client._session.request = lambda method, url, **kwargs: \
-                            type(new_client._session).request(
-                                new_client._session, method, url,
-                                timeout=kwargs.pop("timeout", 5), **kwargs
-                            )
-                    except Exception:
-                        pass  # Si l'SDK change d'interface, on continue sans timeout forcé
-                    self._rf_clients[roboflow_key] = new_client
-                client = self._rf_clients[roboflow_key]
-
-                # img est déjà décodé plus haut — pas besoin de re-décoder les bytes
-                # Bypass DNS eventlet : swap temporaire de getaddrinfo vers la vraie implémentation OS
-                # (eventlet monkey-patch casse la résolution DNS sur Railway)
-                if _REAL_GETADDRINFO is not None:
-                    with _DNS_FIX_LOCK:
-                        old_gai = socket.getaddrinfo
-                        socket.getaddrinfo = _REAL_GETADDRINFO
-                        try:
-                            rf_res = client.infer(img, model_id=roboflow_model)
-                        finally:
-                            socket.getaddrinfo = old_gai
-                else:
-                    rf_res = client.infer(img, model_id=roboflow_model)
+                rf_res = self._call_roboflow(roboflow_key, roboflow_model, image_bytes)
 
                 if rf_res and "predictions" in rf_res:
                     predictions = rf_res.get("predictions", [])
@@ -345,8 +430,6 @@ class ANPREngine:
 
             except Exception as e:
                 logger.error(f"[ANPR] Roboflow error: {e}")
-                # Invalidate cached client si erreur réseau persistante
-                self._rf_clients.pop(roboflow_key, None)
 
         if any(d["plate"] for d in final):
             logger.info(
