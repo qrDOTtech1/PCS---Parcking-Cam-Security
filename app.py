@@ -7,9 +7,12 @@ import io
 import re
 import json
 import random
+import hashlib
+import base64
 import urllib.parse
 import requests
 import time
+from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
@@ -57,7 +60,8 @@ LATEST_FRAMES = {}
 CAMERA_SOCKETS = {}
 FRAME_BUFFERS = {}
 FRAME_TIMESTAMPS = {}
-BUFFER_SIZE = 60
+FRAME_ETAGS = {}
+BUFFER_SIZE = 120
 BUFFER_SECONDS = 3
 FRAME_SEQUENCES = {}
 CAMERA_STATUS = {}
@@ -120,7 +124,7 @@ def normalize_plate(plate_str):
     return re.sub(r"[^A-Z0-9]", "", str(plate_str).upper())
 
 
-def send_alert(user_id, message):
+def send_alert(user_id, message, gif_bytes=None):
     targets = NotificationTarget.query.filter_by(user_id=user_id, is_active=True).all()
     encoded_message = urllib.parse.quote_plus(message)
     for target in targets:
@@ -143,10 +147,16 @@ def send_alert(user_id, message):
                 logger.error(f"Erreur Signal {phone_display}: {e}")
 
         elif target.platform == "telegram" and target.bot_token and target.chat_id:
-            url = f"https://api.telegram.org/bot{target.bot_token}/sendMessage"
-            data = {"chat_id": target.chat_id, "text": message}
             try:
-                requests.post(url, data=data, timeout=3)
+                if gif_bytes:
+                    url = f"https://api.telegram.org/bot{target.bot_token}/sendAnimation"
+                    files = {"animation": ("alert.gif", gif_bytes, "image/gif")}
+                    data = {"chat_id": target.chat_id, "caption": message[:1024]}
+                    requests.post(url, data=data, files=files, timeout=10)
+                else:
+                    url = f"https://api.telegram.org/bot{target.bot_token}/sendMessage"
+                    data = {"chat_id": target.chat_id, "text": message}
+                    requests.post(url, data=data, timeout=3)
             except Exception as e:
                 logger.error(f"Erreur Telegram {target.chat_id}: {e}")
 
@@ -344,12 +354,32 @@ def create_tables():
         except Exception as e:
             logger.warning(f"[DB] Cleanup plate_normalized: {e}")
 
+        # SQLite WAL mode — permet lectures concurrentes pendant les écritures
+        try:
+            conn.execute(text("PRAGMA journal_mode=WAL"))
+            conn.execute(text("PRAGMA busy_timeout=5000"))
+        except Exception:
+            pass
+
+        # Index DB pour les requêtes fréquentes (dashboard, ANPR worker)
+        for idx_stmt in [
+            "CREATE INDEX IF NOT EXISTS idx_pd_user_date ON plate_detection(user_id, detected_at)",
+            "CREATE INDEX IF NOT EXISTS idx_pd_camera ON plate_detection(camera_id)",
+            "CREATE INDEX IF NOT EXISTS idx_camera_user ON camera(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_bl_user ON blacklist(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_bl_user_plate ON blacklist(user_id, plate_normalized, match_plate)",
+        ]:
+            try:
+                conn.execute(text(idx_stmt))
+            except Exception:
+                pass
+
         conn.commit()
 
     # Démarrer le worker ANPR (une seule fois, au premier request)
     from anpr_worker import start_anpr_worker, BLUE_FLASH_LAST
 
-    start_anpr_worker(app, socketio, LATEST_FRAMES, send_alert)
+    start_anpr_worker(app, socketio, LATEST_FRAMES, send_alert, frame_buffers=FRAME_BUFFERS)
 
     # Démarrer le worker de résumés (pour PCS-AI)
     from summary_worker import start_summary_worker
@@ -526,21 +556,23 @@ def stream_upload():
             }
 
             if camera.id not in FRAME_BUFFERS:
-                FRAME_BUFFERS[camera.id] = []
-                FRAME_TIMESTAMPS[camera.id] = []
+                FRAME_BUFFERS[camera.id] = deque(maxlen=BUFFER_SIZE)
+                FRAME_TIMESTAMPS[camera.id] = deque(maxlen=BUFFER_SIZE)
                 FRAME_SEQUENCES[camera.id] = 0
 
             FRAME_BUFFERS[camera.id].append(frame_data)
             FRAME_TIMESTAMPS[camera.id].append(now)
             FRAME_SEQUENCES[camera.id] += 1
 
-            while len(FRAME_BUFFERS[camera.id]) > BUFFER_SIZE:
-                FRAME_BUFFERS[camera.id].pop(0)
-                FRAME_TIMESTAMPS[camera.id].pop(0)
+            FRAME_ETAGS[camera.id] = hashlib.md5(frame_data).hexdigest()
 
             socketio.emit(
                 "frame_update",
-                {"camera_id": camera.id, "timestamp": now.isoformat()},
+                {
+                    "camera_id": camera.id,
+                    "timestamp": now.isoformat(),
+                    "frame_b64": base64.b64encode(frame_data).decode("ascii"),
+                },
                 room=f"camera_{camera.id}",
             )
             return "OK", 200
@@ -558,10 +590,18 @@ def video_feed(camera_id):
         return "Unauthorized", 401
 
     frame = LATEST_FRAMES.get(camera_id)
-    if frame:
-        return Response(frame, mimetype="image/jpeg")
+    if not frame:
+        return "No frame", 404
 
-    return "No frame", 404
+    etag = FRAME_ETAGS.get(camera_id, "")
+    if etag and request.headers.get("If-None-Match") == etag:
+        return Response(status=304)
+
+    resp = Response(frame, mimetype="image/jpeg")
+    if etag:
+        resp.headers["ETag"] = etag
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 def generate_mjpeg_stream(camera_id):
@@ -906,6 +946,73 @@ def handle_client_watch(data):
             emit("watching", {"camera_id": camera_id})
     except Exception as e:
         logger.error(f"Client watch error: {e}")
+
+
+@socketio.on("recording_list_request")
+def handle_recording_list_request(data):
+    """Dashboard demande la liste des enregistrements d'une caméra ESP32."""
+    try:
+        camera_id = data.get("camera_id")
+        if camera_id and camera_id in CAMERA_SOCKETS:
+            socketio.emit("recording_list_request", {}, room=f"camera_{camera_id}")
+    except Exception as e:
+        logger.error(f"Recording list request error: {e}")
+
+
+@socketio.on("recording_list")
+def handle_recording_list(data):
+    """ESP32 renvoie sa liste de fichiers .pcs."""
+    try:
+        camera_id = data.get("camera_id")
+        files = data.get("files", [])
+        camera = Camera.query.get(camera_id)
+        if camera:
+            socketio.emit(
+                "recording_list_update",
+                {"camera_id": camera_id, "files": files},
+                room=f"user_{camera.user_id}",
+            )
+    except Exception as e:
+        logger.error(f"Recording list error: {e}")
+
+
+@socketio.on("recording_download_request")
+def handle_recording_download_request(data):
+    """Dashboard demande le téléchargement d'un fragment."""
+    try:
+        camera_id = data.get("camera_id")
+        filename = data.get("filename")
+        if camera_id and filename and camera_id in CAMERA_SOCKETS:
+            socketio.emit(
+                "recording_download",
+                {"filename": filename},
+                room=f"camera_{camera_id}",
+            )
+    except Exception as e:
+        logger.error(f"Recording download request error: {e}")
+
+
+@socketio.on("recording_chunk")
+def handle_recording_chunk(data):
+    """ESP32 envoie un chunk du fichier d'enregistrement."""
+    try:
+        camera_id = data.get("camera_id")
+        camera = Camera.query.get(camera_id)
+        if camera:
+            socketio.emit(
+                "recording_chunk_relay",
+                {
+                    "camera_id": camera_id,
+                    "filename": data.get("filename"),
+                    "data": data.get("data"),
+                    "index": data.get("index", 0),
+                    "total": data.get("total", 1),
+                    "is_last": data.get("is_last", False),
+                },
+                room=f"user_{camera.user_id}",
+            )
+    except Exception as e:
+        logger.error(f"Recording chunk relay error: {e}")
 
 
 ADMIN_MASTER_KEY = os.environ.get(

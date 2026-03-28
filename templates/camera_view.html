@@ -83,8 +83,42 @@
                     </div>
 
                     <div class="px-5 py-3 bg-gray-50/50 border-t border-gray-100 flex justify-between items-center text-xs text-gray-400">
-                        <span>Polling every 50ms</span>
+                        <span>MJPEG stream</span>
                         <a href="{{ url_for('dashboard') }}" class="text-blue-600 hover:underline font-medium">← Back to dashboard</a>
+                    </div>
+                </div>
+
+                <!-- Enregistrements ESP32 -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
+                        <h2 class="font-bold text-gray-900">Enregistrements</h2>
+                        <button id="btnLoadRecordings" onclick="loadRecordings()"
+                            class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition font-medium">
+                            Charger la liste
+                        </button>
+                    </div>
+                    <div id="recordingsList" class="p-4">
+                        <p class="text-sm text-gray-400 text-center" id="recordingsPlaceholder">
+                            Cliquez "Charger la liste" pour voir les enregistrements de la caméra.
+                        </p>
+                        <div id="recordingsContent" class="hidden space-y-2"></div>
+                    </div>
+                    <!-- PCS Player -->
+                    <div id="pcsPlayer" class="hidden border-t border-gray-100">
+                        <div class="px-5 py-3 flex justify-between items-center bg-gray-900">
+                            <span id="playerTitle" class="text-white text-sm font-medium"></span>
+                            <div class="flex items-center gap-2">
+                                <button onclick="pcsPlayerStop()" class="text-gray-400 hover:text-white text-xs">Fermer</button>
+                            </div>
+                        </div>
+                        <div class="bg-gray-900 aspect-video relative">
+                            <img id="pcsPlayerImg" class="w-full h-full object-contain" alt="Playback">
+                            <div id="pcsPlayerProgress" class="absolute bottom-0 left-0 h-1 bg-blue-500 transition-all" style="width:0%"></div>
+                        </div>
+                        <div class="px-5 py-2 bg-gray-50 text-xs text-gray-500 flex justify-between">
+                            <span id="pcsPlayerFrame">Frame 0/0</span>
+                            <span id="pcsPlayerStatus">...</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -125,14 +159,191 @@
         </div>
     </main>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
     <script>
-        // Sidebar cameras polling (500ms — dashboard-style)
+        const socket = io();
+        // Rejoindre les rooms des caméras sidebar
         {% for cam in cameras %}{% if cam.id != camera.id and cam.is_online %}
-        const sideImg{{ cam.id }} = document.getElementById('sidebar_{{ cam.id }}');
-        setInterval(() => {
-            if (sideImg{{ cam.id }}) sideImg{{ cam.id }}.src = '/video_feed/{{ cam.id }}?t=' + Date.now();
-        }, 500);
+        socket.emit('client_watch', {camera_id: {{ cam.id }}});
         {% endif %}{% endfor %}
+
+        // Recevoir les frames sidebar via SocketIO
+        socket.on('frame_update', function(data) {
+            const img = document.getElementById('sidebar_' + data.camera_id);
+            if (img && data.frame_b64) {
+                img.src = 'data:image/jpeg;base64,' + data.frame_b64;
+            }
+        });
+
+        // Fallback polling 5s
+        setInterval(() => {
+            {% for cam in cameras %}{% if cam.id != camera.id and cam.is_online %}
+            const sideImg{{ cam.id }} = document.getElementById('sidebar_{{ cam.id }}');
+            if (sideImg{{ cam.id }} && !sideImg{{ cam.id }}.src.startsWith('data:')) {
+                sideImg{{ cam.id }}.src = '/video_feed/{{ cam.id }}?t=' + Date.now();
+            }
+            {% endif %}{% endfor %}
+        }, 5000);
+
+        // ── Enregistrements ESP32 ──────────────────────────────────
+        const CAMERA_ID = {{ camera.id }};
+        socket.emit('client_watch', {camera_id: CAMERA_ID});
+
+        // Demander la liste des enregistrements
+        function loadRecordings() {
+            const btn = document.getElementById('btnLoadRecordings');
+            btn.textContent = 'Chargement...';
+            btn.disabled = true;
+            socket.emit('recording_list_request', {camera_id: CAMERA_ID});
+            // Timeout si pas de réponse en 10s
+            setTimeout(() => {
+                if (btn.disabled) {
+                    btn.textContent = 'Charger la liste';
+                    btn.disabled = false;
+                    document.getElementById('recordingsPlaceholder').textContent =
+                        'Caméra hors ligne ou pas de carte SD.';
+                }
+            }, 10000);
+        }
+
+        // Recevoir la liste des enregistrements
+        socket.on('recording_list_update', function(data) {
+            if (data.camera_id !== CAMERA_ID) return;
+            const btn = document.getElementById('btnLoadRecordings');
+            btn.textContent = 'Rafraîchir';
+            btn.disabled = false;
+
+            const container = document.getElementById('recordingsContent');
+            const placeholder = document.getElementById('recordingsPlaceholder');
+            placeholder.classList.add('hidden');
+            container.classList.remove('hidden');
+            container.innerHTML = '';
+
+            if (!data.files || data.files.length === 0) {
+                container.innerHTML = '<p class="text-sm text-gray-400 text-center">Aucun enregistrement trouvé.</p>';
+                return;
+            }
+
+            data.files.forEach(function(f) {
+                const sizeStr = f.size ? (f.size / 1024 / 1024).toFixed(1) + ' MB' : '';
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between p-2 bg-gray-50 rounded-lg';
+                div.innerHTML =
+                    '<div class="flex items-center gap-2">' +
+                        '<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+                            '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>' +
+                        '</svg>' +
+                        '<span class="text-sm font-medium text-gray-700">' + f.name + '</span>' +
+                        '<span class="text-xs text-gray-400">' + sizeStr + '</span>' +
+                    '</div>' +
+                    '<div class="flex gap-1">' +
+                        '<button onclick="pcsPlayerStart(\'' + f.name + '\')" ' +
+                            'class="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700">Lire</button>' +
+                        '<button onclick="downloadRecording(\'' + f.name + '\')" ' +
+                            'class="text-xs bg-gray-600 text-white px-2 py-1 rounded hover:bg-gray-700">DL</button>' +
+                    '</div>';
+                container.appendChild(div);
+            });
+        });
+
+        // ── PCS Player (.pcs format: [uint32 len][JPEG data]...) ──
+        let pcsChunks = [];
+        let pcsFilename = '';
+
+        function pcsPlayerStart(filename) {
+            pcsChunks = [];
+            pcsFilename = filename;
+            document.getElementById('pcsPlayer').classList.remove('hidden');
+            document.getElementById('playerTitle').textContent = filename;
+            document.getElementById('pcsPlayerStatus').textContent = 'Téléchargement...';
+            document.getElementById('pcsPlayerFrame').textContent = 'Frame 0/0';
+            document.getElementById('pcsPlayerProgress').style.width = '0%';
+            socket.emit('recording_download_request', {camera_id: CAMERA_ID, filename: filename});
+        }
+
+        function pcsPlayerStop() {
+            document.getElementById('pcsPlayer').classList.add('hidden');
+            pcsChunks = [];
+        }
+
+        // Recevoir les chunks du fichier
+        socket.on('recording_chunk_relay', function(data) {
+            if (data.camera_id !== CAMERA_ID || data.filename !== pcsFilename) return;
+            pcsChunks.push(data.data);
+            const pct = Math.round((data.index + 1) / data.total * 100);
+            document.getElementById('pcsPlayerStatus').textContent = 'Téléchargement ' + pct + '%';
+            document.getElementById('pcsPlayerProgress').style.width = pct + '%';
+
+            if (data.is_last) {
+                // Assembler les chunks
+                const fullB64 = pcsChunks.join('');
+                const binary = atob(fullB64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+                if (pcsDownloadMode) {
+                    // Télécharger le fichier brut
+                    const blob = new Blob([bytes], {type: 'application/octet-stream'});
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = pcsFilename;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                    pcsChunks = [];
+                    pcsDownloadMode = false;
+                } else {
+                    // Lire dans le player
+                    document.getElementById('pcsPlayerStatus').textContent = 'Décodage...';
+                    playPcsBuffer(bytes.buffer);
+                }
+            }
+        });
+
+        function playPcsBuffer(arrayBuffer) {
+            const view = new DataView(arrayBuffer);
+            let offset = 0;
+            const frames = [];
+            while (offset + 4 < view.byteLength) {
+                const len = view.getUint32(offset, true);
+                offset += 4;
+                if (len === 0 || offset + len > view.byteLength) break;
+                const jpegData = new Uint8Array(arrayBuffer, offset, len);
+                frames.push(URL.createObjectURL(new Blob([jpegData], {type: 'image/jpeg'})));
+                offset += len;
+            }
+            if (frames.length === 0) {
+                document.getElementById('pcsPlayerStatus').textContent = 'Aucune frame trouvée';
+                return;
+            }
+            document.getElementById('pcsPlayerStatus').textContent = 'Lecture';
+            let i = 0;
+            const imgEl = document.getElementById('pcsPlayerImg');
+            const frameEl = document.getElementById('pcsPlayerFrame');
+            const progEl = document.getElementById('pcsPlayerProgress');
+            const interval = setInterval(() => {
+                if (i >= frames.length || document.getElementById('pcsPlayer').classList.contains('hidden')) {
+                    clearInterval(interval);
+                    frames.forEach(URL.revokeObjectURL);
+                    if (i >= frames.length) {
+                        document.getElementById('pcsPlayerStatus').textContent = 'Terminé';
+                    }
+                    return;
+                }
+                imgEl.src = frames[i];
+                frameEl.textContent = 'Frame ' + (i + 1) + '/' + frames.length;
+                progEl.style.width = ((i + 1) / frames.length * 100) + '%';
+                i++;
+            }, 100);
+        }
+
+        let pcsDownloadMode = false;
+
+        function downloadRecording(filename) {
+            pcsChunks = [];
+            pcsFilename = filename;
+            pcsDownloadMode = true;
+            socket.emit('recording_download_request', {camera_id: CAMERA_ID, filename: filename});
+        }
     </script>
 </body>
 </html>

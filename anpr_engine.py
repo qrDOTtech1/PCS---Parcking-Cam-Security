@@ -199,6 +199,44 @@ class ANPREngine:
 
         return best_crop
 
+    def _find_all_plate_crops(self, img):
+        """
+        Cherche TOUTES les régions plaque dans l'image entière.
+        Contrairement à _find_plate_crop() qui ne cherche que dans le bas
+        d'un crop véhicule, celle-ci scanne toute l'image pour détecter
+        des plaques indépendamment de la détection YOLO.
+        Retourne une liste de crops candidats (max 5).
+        """
+        import cv2
+
+        h, w = img.shape[:2]
+        if h < 30 or w < 60:
+            return []
+
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        _, white_mask = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 6))
+        closed = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, kernel)
+        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        crops = []
+        for cnt in contours:
+            x, y, cw, ch = cv2.boundingRect(cnt)
+            if cw < 50 or ch < 10:
+                continue
+            aspect = cw / max(ch, 1)
+            if not (2.5 <= aspect <= 7.0):
+                continue
+            area = cw * ch
+            if area < (w * h * 0.002):
+                continue
+            pad = 4
+            crop = img[max(0, y - pad):min(h, y + ch + pad), max(0, x - pad):min(w, x + cw + pad)]
+            if crop.size > 0:
+                crops.append(crop)
+
+        return crops[:5]
+
     def _call_roboflow(self, api_key, model_id, image_bytes, timeout=6):
         """
         Appelle l'API Roboflow Serverless via curl (subprocess).
@@ -229,9 +267,10 @@ class ANPREngine:
                     "-m", str(timeout),
                     "-X", "POST",
                     "-H", "Content-Type: text/plain",
-                    "--data", img_b64,
+                    "--data-binary", "@-",
                     url,
                 ],
+                input=img_b64,
                 capture_output=True,
                 text=True,
                 timeout=timeout + 2,
@@ -480,6 +519,46 @@ class ANPREngine:
 
             except Exception as e:
                 logger.error(f"[ANPR] Roboflow error: {e}")
+
+        # Étape 4 : Scan plaque plein écran (indépendant de YOLO)
+        # Cherche des rectangles blanc/plaque PARTOUT dans l'image
+        already_found_plates = {d["plate"] for d in final if d["plate"]}
+        full_plate_crops = self._find_all_plate_crops(img)
+        for plate_crop in full_plate_crops:
+            try:
+                ocr_results = self._ocr.readtext(plate_crop, detail=1, paragraph=False)
+            except Exception:
+                continue
+
+            fragments = []
+            for bbox_pts, text_val, conf in ocr_results:
+                if conf < 0.2:
+                    continue
+                normalized = normalize_plate(text_val)
+                if len(normalized) < 2:
+                    continue
+                x_pos = bbox_pts[0][0] if bbox_pts else 0
+                fragments.append((x_pos, normalized, conf))
+
+            if not fragments:
+                continue
+
+            fragments.sort(key=lambda f: f[0])
+            combined = "".join(f[1] for f in fragments)
+
+            if (4 <= len(combined) <= 12
+                    and any(c.isdigit() for c in combined)
+                    and any(c.isalpha() for c in combined)
+                    and combined not in already_found_plates):
+                avg_conf = sum(f[2] for f in fragments) / len(fragments)
+                final.append({
+                    "plate": combined,
+                    "confidence": round(avg_conf, 3),
+                    "bbox": [0, 0, w, h],
+                    "vehicle_type": "unknown",
+                    "vehicle_color": "unknown",
+                })
+                already_found_plates.add(combined)
 
         if any(d["plate"] for d in final):
             logger.info(

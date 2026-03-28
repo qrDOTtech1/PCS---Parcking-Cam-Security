@@ -17,7 +17,7 @@ import eventlet.tpool
 logger = logging.getLogger(__name__)
 
 # Intervalle minimum entre 2 scans d'une même caméra (secondes)
-ANPR_INTERVAL = int(os.environ.get("ANPR_INTERVAL_SECONDS", "5"))
+ANPR_INTERVAL = int(os.environ.get("ANPR_INTERVAL_SECONDS", "3"))
 
 # Cache pour dédupliquer : (camera_id, plate) -> timestamp
 RECENT_DETECTIONS = {}
@@ -93,7 +93,7 @@ def _check_flash(cam_id):
     return mean_val >= BLUE_FLASH_MIN_MEAN and variance >= BLUE_FLASH_MIN_VAR
 
 
-def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
+def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers=None):
     """
     Démarre le worker ANPR en arrière-plan.
 
@@ -101,7 +101,8 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
         app: Flask app (pour app_context)
         socketio: SocketIO instance (pour emit threat_alert)
         latest_frames: dict LATEST_FRAMES {camera_id: bytes}
-        send_alert_fn: fonction send_alert(user_id, message)
+        send_alert_fn: fonction send_alert(user_id, message, gif_bytes=None)
+        frame_buffers: dict FRAME_BUFFERS {camera_id: deque(bytes)} pour GIF alertes
     """
     if os.environ.get("ANPR_ENABLED", "true").lower() == "false":
         logger.info("[ANPR Worker] Disabled via ANPR_ENABLED=false")
@@ -418,8 +419,19 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                                     f"Caméra: {camera.name}\n"
                                     f"Raison: {matched_rule.description}"
                                 )
+                                # Générer un GIF des dernières frames si le buffer est disponible
+                                gif_bytes = None
+                                if frame_buffers:
+                                    try:
+                                        from alert_clip import create_alert_gif
+                                        gif_bytes = eventlet.tpool.execute(
+                                            create_alert_gif, frame_buffers, cam_id, 20
+                                        )
+                                    except Exception as e:
+                                        logger.warning(f"[ANPR] GIF creation error: {e}")
+
                                 try:
-                                    send_alert_fn(camera.user_id, alert_msg)
+                                    send_alert_fn(camera.user_id, alert_msg, gif_bytes=gif_bytes)
                                 except Exception as e:
                                     logger.warning(f"[ANPR] Alert send error: {e}")
 

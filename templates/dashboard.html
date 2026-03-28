@@ -722,16 +722,18 @@
         });
 
         const socket = io();
+        // Rejoindre les rooms pour recevoir frame_update en temps réel
         {% for cam in cameras %}
+        socket.emit('client_watch', {camera_id: {{ cam.id }}});
+        {% endfor %}
+
+        // Recevoir les frames via SocketIO (base64 push — zéro HTTP)
         socket.on('frame_update', function(data) {
-            if (data.camera_id === {{ cam.id }}) {
-                const img = document.getElementById('thumb_{{ cam.id }}');
-                if (img) {
-                    img.src = '/video_feed/' + {{ cam.id }} + '?t=' + new Date().getTime();
-                }
+            const img = document.getElementById('thumb_' + data.camera_id);
+            if (img && data.frame_b64) {
+                img.src = 'data:image/jpeg;base64,' + data.frame_b64;
             }
         });
-        {% endfor %}
 
         socket.on('threat_alert', function(data) {
             const priority = data.priority || 'normal';
@@ -901,14 +903,15 @@
             }
         }
 
+        // Fallback polling 5s — uniquement si SocketIO n'a pas livré de frame
         setInterval(() => {
             {% for cam in cameras %}
-            const img{{ cam.id }} = document.getElementById('thumb_{{ cam.id }}');
-            if (img{{ cam.id }}) {
-                img{{ cam.id }}.src = '/video_feed/{{ cam.id }}?t=' + new Date().getTime();
+            const fbImg{{ cam.id }} = document.getElementById('thumb_{{ cam.id }}');
+            if (fbImg{{ cam.id }} && !fbImg{{ cam.id }}.src.startsWith('data:')) {
+                fbImg{{ cam.id }}.src = '/video_feed/{{ cam.id }}?t=' + Date.now();
             }
             {% endfor %}
-        }, 500);
+        }, 5000);
     </script>
 </body>
 </html>
