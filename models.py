@@ -29,6 +29,9 @@ class User(db.Model):
     system_configs = db.relationship(
         "SystemConfig", backref="owner", lazy=True, cascade="all, delete-orphan"
     )
+    roboflow_models = db.relationship(
+        "RoboflowModel", backref="owner", lazy=True, cascade="all, delete-orphan"
+    )
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -119,6 +122,8 @@ class PlateDetection(db.Model):
     confidence = db.Column(db.Float, nullable=True)
     detected_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_threat = db.Column(db.Boolean, default=False)
+    roboflow_model_name = db.Column(db.String(50), default="")
+    detected_class = db.Column(db.String(50), default="")
 
     camera = db.relationship("Camera", backref="detections")
 
@@ -152,6 +157,38 @@ class CameraSummary(db.Model):
     ai_response = db.Column(db.Text, default="")  # Analyse écrite par l'IA
 
     camera = db.relationship("Camera", backref="summaries")
+
+
+class RoboflowModel(db.Model):
+    """
+    Modèle Roboflow configurable par l'utilisateur.
+    Chaque user peut avoir N modèles selon son tier d'abonnement.
+    Chaque modèle a son propre mode d'alerte (log_only, alert_all, alert_on_classes).
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    name = db.Column(db.String(50), nullable=False)
+    model_endpoint = db.Column(db.String(100), nullable=False)
+    api_key = db.Column(db.String(100), nullable=False)
+    alert_mode = db.Column(db.String(20), default="log_only")
+    alert_classes_json = db.Column(db.Text, default="[]")
+    alert_priority = db.Column(db.String(10), default="normal")
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def get_alert_classes(self):
+        import json
+
+        try:
+            return json.loads(self.alert_classes_json or "[]")
+        except Exception:
+            return []
+
+    def set_alert_classes(self, class_list):
+        import json
+
+        self.alert_classes_json = json.dumps(class_list)
 
 
 class AIConfig(db.Model):

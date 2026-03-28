@@ -239,20 +239,155 @@
 
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-8">
                 <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
-                    <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
-                        <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                        </svg>
-                        Roboflow AI Integration
-                    </h2>
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                            Modèles IA (Roboflow)
+                        </h2>
+                        <span class="text-xs font-semibold px-2 py-1 rounded-full
+                            {% if max_rf_models == -1 %}bg-green-100 text-green-700
+                            {% elif roboflow_models|length >= max_rf_models %}bg-red-100 text-red-700
+                            {% else %}bg-purple-100 text-purple-700{% endif %}">
+                            {{ roboflow_models|length }} / {% if max_rf_models == -1 %}∞{% else %}{{ max_rf_models }}{% endif %} modèles
+                        </span>
+                    </div>
                 </div>
                 <div class="p-6">
-                    <p class="text-sm text-gray-500 mb-4">Connectez votre propre modèle Roboflow pour une détection experte (ex: véhicules de police). Le système fusionnera ses prédictions avec YOLOv11.</p>
-                    <form method="POST" action="{{ url_for('update_ai_config') }}" class="space-y-3">
-                        <input type="text" name="roboflow_key" placeholder="API Key (ex: xYz123aBc)" value="{{ rf_key }}" class="w-full px-3 py-2 border rounded-lg text-sm">
-                        <input type="text" name="roboflow_model" placeholder="Model Endpoint (ex: police-detector/1)" value="{{ rf_model }}" class="w-full px-3 py-2 border rounded-lg text-sm">
-                        <button type="submit" class="w-full bg-purple-600 text-white py-2 rounded-lg text-sm">Sauvegarder</button>
-                    </form>
+                    <p class="text-sm text-gray-500 mb-4">Connectez vos modèles Roboflow pour une détection experte. Chaque modèle peut avoir ses propres règles d'alerte.</p>
+
+                    <!-- Liste des modèles existants -->
+                    {% if roboflow_models %}
+                    <div class="space-y-3 mb-5">
+                        {% for rfm in roboflow_models %}
+                        <div class="border border-gray-200 rounded-lg p-3 bg-gray-50/50 {% if not rfm.is_active %}opacity-60{% endif %}">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-full {% if rfm.is_active %}bg-green-400 animate-pulse{% else %}bg-gray-300{% endif %}"></span>
+                                    <span class="font-bold text-gray-800 text-sm">{{ rfm.name }}</span>
+                                    <span class="text-xs font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded">{{ rfm.model_endpoint }}</span>
+                                </div>
+                                <div class="flex items-center gap-1">
+                                    <!-- Badge mode alerte -->
+                                    {% if rfm.alert_mode == 'log_only' %}
+                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">Log</span>
+                                    {% elif rfm.alert_mode == 'alert_all' %}
+                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">Alerte tout</span>
+                                    {% elif rfm.alert_mode == 'alert_on_classes' %}
+                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700">Classes</span>
+                                    {% endif %}
+                                    <!-- Badge priorité -->
+                                    {% set p = rfm.alert_priority or 'normal' %}
+                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold
+                                        {% if p == 'critical' %}bg-red-100 text-red-700
+                                        {% elif p == 'high' %}bg-orange-100 text-orange-700
+                                        {% else %}bg-gray-100 text-gray-600{% endif %}">{{ p }}</span>
+                                    <!-- Toggle on/off -->
+                                    <form method="POST" action="{{ url_for('roboflow_toggle', id=rfm.id) }}" class="inline">
+                                        <button type="submit" class="ml-1 px-2 py-1 rounded text-xs font-medium transition
+                                            {% if rfm.is_active %}bg-green-100 text-green-700 hover:bg-green-200{% else %}bg-gray-200 text-gray-500 hover:bg-gray-300{% endif %}"
+                                            title="{% if rfm.is_active %}Désactiver{% else %}Activer{% endif %}">
+                                            {% if rfm.is_active %}ON{% else %}OFF{% endif %}
+                                        </button>
+                                    </form>
+                                    <!-- Edit -->
+                                    <button type="button" onclick="toggleEditRf({{ rfm.id }})"
+                                        class="px-2 py-1 rounded text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition">Edit</button>
+                                    <!-- Delete -->
+                                    <form method="POST" action="{{ url_for('roboflow_delete', id=rfm.id) }}" class="inline"
+                                        onsubmit="return confirm('Supprimer le modèle {{ rfm.name }} ?');">
+                                        <button type="submit" class="px-2 py-1 rounded text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 transition">Del</button>
+                                    </form>
+                                </div>
+                            </div>
+                            {% if rfm.alert_mode == 'alert_on_classes' and rfm.get_alert_classes() %}
+                            <div class="flex flex-wrap gap-1 mt-1">
+                                {% for cls in rfm.get_alert_classes() %}
+                                <span class="px-2 py-0.5 rounded text-xs bg-blue-50 text-blue-700 border border-blue-200">{{ cls }}</span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+
+                            <!-- Edit form (hidden by default) -->
+                            <div id="edit-rf-{{ rfm.id }}" class="hidden mt-3 border-t border-gray-200 pt-3">
+                                <form method="POST" action="{{ url_for('roboflow_update', id=rfm.id) }}" class="space-y-2">
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <input type="text" name="name" value="{{ rfm.name }}" placeholder="Nom" class="px-3 py-2 border rounded-lg text-sm">
+                                        <input type="text" name="model_endpoint" value="{{ rfm.model_endpoint }}" placeholder="model/version" class="px-3 py-2 border rounded-lg text-sm font-mono">
+                                    </div>
+                                    <input type="text" name="api_key" value="{{ rfm.api_key }}" placeholder="API Key" class="w-full px-3 py-2 border rounded-lg text-sm font-mono">
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <select name="alert_mode" onchange="toggleClassesInput(this, 'edit-classes-{{ rfm.id }}')" class="px-3 py-2 border rounded-lg text-sm bg-white">
+                                            <option value="log_only" {% if rfm.alert_mode == 'log_only' %}selected{% endif %}>Log uniquement</option>
+                                            <option value="alert_all" {% if rfm.alert_mode == 'alert_all' %}selected{% endif %}>Alerter sur tout</option>
+                                            <option value="alert_on_classes" {% if rfm.alert_mode == 'alert_on_classes' %}selected{% endif %}>Alerter sur classes</option>
+                                        </select>
+                                        <select name="alert_priority" class="px-3 py-2 border rounded-lg text-sm bg-white">
+                                            <option value="normal" {% if rfm.alert_priority == 'normal' %}selected{% endif %}>Normal</option>
+                                            <option value="high" {% if rfm.alert_priority == 'high' %}selected{% endif %}>High</option>
+                                            <option value="critical" {% if rfm.alert_priority == 'critical' %}selected{% endif %}>Critical</option>
+                                        </select>
+                                    </div>
+                                    <input type="text" name="alert_classes" id="edit-classes-{{ rfm.id }}"
+                                        value="{{ rfm.get_alert_classes()|join(', ') }}"
+                                        placeholder="Classes (séparées par virgule)"
+                                        class="w-full px-3 py-2 border rounded-lg text-sm {% if rfm.alert_mode != 'alert_on_classes' %}hidden{% endif %}">
+                                    <button type="submit" class="w-full bg-purple-600 text-white py-2 rounded-lg text-sm font-medium">Sauvegarder</button>
+                                </form>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-sm text-gray-400 italic mb-5">Aucun modèle IA configuré.</p>
+                    {% endif %}
+
+                    <!-- Formulaire ajout -->
+                    {% if max_rf_models == -1 or roboflow_models|length < max_rf_models %}
+                    <div class="border-t border-gray-100 pt-4">
+                        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Ajouter un modèle</p>
+                        <form method="POST" action="{{ url_for('roboflow_add') }}" class="space-y-3">
+                            <div class="grid grid-cols-2 gap-2">
+                                <input type="text" name="name" placeholder="Nom (ex: Police Detector)" required
+                                    class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                <input type="text" name="model_endpoint" placeholder="Endpoint (ex: police-detector/1)" required
+                                    class="px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono">
+                            </div>
+                            <input type="text" name="api_key" placeholder="Clé API Roboflow" required
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono">
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">Mode d'alerte</label>
+                                    <select name="alert_mode" id="new-rf-alert-mode" onchange="toggleClassesInput(this, 'new-rf-classes')" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                        <option value="log_only">Log uniquement (enrichit l'historique)</option>
+                                        <option value="alert_all">Alerter sur toutes les détections</option>
+                                        <option value="alert_on_classes">Alerter sur certaines classes</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">Priorité</label>
+                                    <select name="alert_priority" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                        <option value="normal">Normal</option>
+                                        <option value="high">High</option>
+                                        <option value="critical">Critical</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <input type="text" name="alert_classes" id="new-rf-classes"
+                                placeholder="Classes d'alerte (séparées par virgule, ex: flic, ambulance)"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm hidden">
+                            <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg text-sm font-medium transition">
+                                + Ajouter le modèle
+                            </button>
+                        </form>
+                    </div>
+                    {% else %}
+                    <div class="border-t border-gray-100 pt-4">
+                        <p class="text-sm text-center text-red-500 font-medium">Limite atteinte ({{ max_rf_models }} modèles max).</p>
+                        <p class="text-xs text-center text-gray-400 mt-1">Passez à un abonnement supérieur pour plus de modèles.</p>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
             
@@ -299,6 +434,8 @@
                                     <th class="pb-3 font-medium">Plaque</th>
                                     <th class="pb-3 font-medium">Type</th>
                                     <th class="pb-3 font-medium">Couleur</th>
+                                    <th class="pb-3 font-medium">Modèle</th>
+                                    <th class="pb-3 font-medium">Classe</th>
                                     <th class="pb-3 font-medium">Statut</th>
                                 </tr>
                             </thead>
@@ -344,6 +481,20 @@
                                             </span>
                                             {{ det.vehicle_color or '—' }}
                                         </span>
+                                    </td>
+                                    <td class="py-2.5 text-xs text-gray-600">
+                                        {% if det.roboflow_model_name %}
+                                        <span class="px-2 py-0.5 rounded bg-purple-50 text-purple-700 font-medium">{{ det.roboflow_model_name }}</span>
+                                        {% else %}
+                                        <span class="text-gray-300">YOLO</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="py-2.5 text-xs text-gray-600">
+                                        {% if det.detected_class %}
+                                        <span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-medium">{{ det.detected_class }}</span>
+                                        {% else %}
+                                        <span class="text-gray-300">—</span>
+                                        {% endif %}
                                     </td>
                                     <td class="py-2.5">
                                         {% if det.is_threat %}
@@ -557,7 +708,7 @@
                         <p>The ANPR engine automatically scans all active cameras in the background and checks detected plates against your blacklist.</p>
                         <div class="flex items-center gap-2 mt-3 bg-gray-50 rounded-lg p-3">
                             <span class="text-xs font-semibold text-gray-500 uppercase">Scan interval</span>
-                            <span class="text-sm font-mono font-bold text-gray-800">5s</span>
+                            <span class="text-sm font-mono font-bold text-gray-800">3s</span>
                             <span class="text-xs text-gray-400">per camera</span>
                         </div>
                     </div>
@@ -784,12 +935,22 @@
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-gray-50 transition history-row ' + (d.is_threat ? 'threat-row' : 'normal-row') + ' ' + (d.plate && d.plate.length >= 4 ? 'plate-row' : 'noplate-row');
             if (d.is_threat) tr.style.backgroundColor = '#fff8f8';
+            // Modèle + Classe
+            const modelHtml = d.roboflow_model_name
+                ? '<span class="px-2 py-0.5 rounded bg-purple-50 text-purple-700 font-medium">' + d.roboflow_model_name + '</span>'
+                : '<span class="text-gray-300">YOLO</span>';
+            const classHtml = d.detected_class
+                ? '<span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-medium">' + d.detected_class + '</span>'
+                : '<span class="text-gray-300">—</span>';
+
             tr.innerHTML =
                 '<td class="py-2.5 text-gray-500 text-xs whitespace-nowrap">' + d.detected_at + '</td>' +
                 '<td class="py-2.5 font-medium text-gray-800 text-xs">' + (d.camera_name || '—') + '</td>' +
                 '<td class="py-2.5">' + plateHtml + '</td>' +
                 '<td class="py-2.5"><span class="px-2 py-0.5 rounded text-xs font-medium ' + typeCls + '">' + (d.vehicle_type || '—') + '</span></td>' +
                 '<td class="py-2.5 text-xs text-gray-600 capitalize"><span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full inline-block border border-gray-200" style="background-color:' + dotColor + '"></span>' + (d.vehicle_color || '—') + '</span></td>' +
+                '<td class="py-2.5 text-xs text-gray-600">' + modelHtml + '</td>' +
+                '<td class="py-2.5 text-xs text-gray-600">' + classHtml + '</td>' +
                 '<td class="py-2.5">' + statusHtml + '</td>';
 
             // Flash vert pour la nouvelle ligne
@@ -929,6 +1090,22 @@
                     btn.className = btn.className.replace('bg-white text-gray-700 shadow-sm', 'text-gray-500 hover:text-gray-700');
                 }
             });
+        }
+
+        // ── Roboflow multi-model UI helpers ──
+        function toggleEditRf(id) {
+            const el = document.getElementById('edit-rf-' + id);
+            if (el) el.classList.toggle('hidden');
+        }
+
+        function toggleClassesInput(select, inputId) {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            if (select.value === 'alert_on_classes') {
+                input.classList.remove('hidden');
+            } else {
+                input.classList.add('hidden');
+            }
         }
 
         function switchNotifPlatform(platform) {

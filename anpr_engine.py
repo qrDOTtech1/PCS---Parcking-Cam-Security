@@ -292,21 +292,62 @@ class ANPREngine:
             logger.warning(f"[ANPR] Roboflow invalid JSON: {e} — stdout: {result.stdout[:200]}")
             return None
 
-    def detect_plates(self, image_bytes, roboflow_key=None, roboflow_model=None):
+    def detect_with_roboflow(self, image_bytes, api_key, model_id):
         """
-        Détecte les véhicules et plaques dans une image JPEG brute.
-
-        Retourne une liste de détections, une par véhicule trouvé.
-        Chaque détection contient : plate (peut être None), vehicle_type, vehicle_color.
+        Appelle UN SEUL modèle Roboflow et retourne ses détections brutes.
+        Ne fait PAS de YOLO ni d'OCR — le worker orchestre les appels.
 
         Returns:
             list[dict] — [{
-                'plate': 'AB123CD' or None,
-                'confidence': 0.8,
+                'rf_class': 'flic',
+                'confidence': 0.91,
                 'bbox': [x1,y1,x2,y2],
-                'vehicle_type': 'car',
-                'vehicle_color': 'red',
+                'vehicle_type': 'flic',
+                'vehicle_color': 'blue',
             }]
+        """
+        import cv2
+
+        img_array = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        if img is None:
+            return []
+
+        h, w = img.shape[:2]
+        results = []
+
+        rf_res = self._call_roboflow(api_key, model_id, image_bytes)
+        if rf_res and "predictions" in rf_res:
+            for p in rf_res.get("predictions", []):
+                rf_conf = p.get("confidence", 0)
+                if rf_conf < 0.4:
+                    continue
+                rf_class = p.get("class", "detection")
+                w_half = p["width"] / 2
+                h_half = p["height"] / 2
+                x1 = max(0, int(p["x"] - w_half))
+                y1 = max(0, int(p["y"] - h_half))
+                x2 = min(w, int(p["x"] + w_half))
+                y2 = min(h, int(p["y"] + h_half))
+                crop = img[y1:y2, x1:x2]
+                color = self._detect_color(crop) if crop.size > 0 else "unknown"
+                results.append({
+                    "rf_class": rf_class,
+                    "confidence": round(rf_conf, 3),
+                    "bbox": [x1, y1, x2, y2],
+                    "vehicle_type": rf_class.lower(),
+                    "vehicle_color": color,
+                })
+
+        return results
+
+    def detect_plates(self, image_bytes, roboflow_key=None, roboflow_model=None):
+        """
+        Détecte les véhicules et plaques dans une image JPEG brute.
+        YOLO + EasyOCR + scan plein écran.
+        Les appels Roboflow sont gérés séparément par le worker.
+
+        Si roboflow_key/roboflow_model sont fournis (legacy), ils sont ignorés.
         """
         import cv2
 
@@ -319,47 +360,7 @@ class ANPREngine:
         h, w = img.shape[:2]
         detections = []
 
-        # ═══════════════════════════════════════════════════════════
-        # Étape 1 : ROBOFLOW D'ABORD (modèle expert, classes custom)
-        # ═══════════════════════════════════════════════════════════
-        roboflow_crops = []
-        roboflow_detections = []
-        if roboflow_key and roboflow_model:
-            try:
-                rf_res = self._call_roboflow(roboflow_key, roboflow_model, image_bytes)
-                if rf_res and "predictions" in rf_res:
-                    for p in rf_res.get("predictions", []):
-                        rf_conf = p.get("confidence", 0)
-                        if rf_conf < 0.4:
-                            continue
-                        rf_class = p.get("class", "detection").lower()
-                        w_half = p["width"] / 2
-                        h_half = p["height"] / 2
-                        x1 = int(p["x"] - w_half)
-                        y1 = int(p["y"] - h_half)
-                        x2 = int(p["x"] + w_half)
-                        y2 = int(p["y"] + h_half)
-                        rf_bbox = [max(0, x1), max(0, y1), min(w, x2), min(h, y2)]
-                        crop_rf = img[rf_bbox[1]:rf_bbox[3], rf_bbox[0]:rf_bbox[2]]
-                        if crop_rf.size > 0:
-                            color = self._detect_color(crop_rf)
-                            roboflow_crops.append((crop_rf, rf_bbox, rf_conf, rf_class, color))
-                            roboflow_detections.append({
-                                "bbox": rf_bbox,
-                                "confidence": round(rf_conf, 3),
-                                "vehicle_type": rf_class,
-                                "vehicle_color": color,
-                            })
-                    if roboflow_crops:
-                        logger.info(f"[ANPR] Roboflow: {len(roboflow_crops)} detections ({[c[3] for c in roboflow_crops]})")
-            except Exception as e:
-                logger.error(f"[ANPR] Roboflow error: {e}")
-        else:
-            logger.debug(f"[ANPR] Roboflow skipped: key={'set' if roboflow_key else 'MISSING'} model={'set' if roboflow_model else 'MISSING'}")
-
-        # ═══════════════════════════════════════════════════════════
-        # Étape 2 : YOLO local — détecter les véhicules
-        # ═══════════════════════════════════════════════════════════
+        # Étape 1 : YOLO local — détecter les véhicules
         results = self._yolo(img, verbose=False, conf=0.45, iou=0.5)
 
         vehicle_crops = []
@@ -391,17 +392,7 @@ class ANPREngine:
                         )
                     )
 
-        # Fusionner : Roboflow crops non matchés par YOLO → les ajouter
-        for rf_crop, rf_bbox, rf_conf, rf_class, rf_color in roboflow_crops:
-            matched = False
-            for vc in vehicle_crops:
-                if self._compute_iou(rf_bbox, vc[1]) > 0.4:
-                    matched = True
-                    break
-            if not matched:
-                vehicle_crops.append((rf_crop, rf_bbox, rf_conf, rf_class, rf_color))
-
-        # Fallback : image entière si ni YOLO ni Roboflow n'ont rien trouvé
+        # Fallback : image entière si aucun véhicule
         if not vehicle_crops:
             color = self._detect_color(img)
             vehicle_crops = [(img, [0, 0, w, h], 0.0, "unknown", color)]

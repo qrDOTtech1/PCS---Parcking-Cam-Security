@@ -47,6 +47,7 @@ from models import (
     PlateDetection,
     CameraSummary,
     AIConfig,
+    RoboflowModel,
 )
 from sqlalchemy import text
 import logging
@@ -374,6 +375,39 @@ def create_tables():
             except Exception:
                 pass
 
+        # Migration: nouvelles colonnes PlateDetection pour multi-modèle Roboflow
+        for col, defn in [
+            ("roboflow_model_name", "VARCHAR(50) DEFAULT ''"),
+            ("detected_class", "VARCHAR(50) DEFAULT ''"),
+        ]:
+            try:
+                conn.execute(text(f"ALTER TABLE plate_detection ADD COLUMN {col} {defn}"))
+            except Exception:
+                pass
+
+        # Migration: anciens SystemConfig roboflow → RoboflowModel (une seule fois)
+        try:
+            migrated = conn.execute(text(
+                "SELECT sc1.user_id, sc1.key_value, sc2.key_value "
+                "FROM system_config sc1 "
+                "JOIN system_config sc2 ON sc1.user_id = sc2.user_id "
+                "WHERE sc1.key_name = 'roboflow_api_key' AND sc2.key_name = 'roboflow_model' "
+                "AND sc1.key_value != '' AND sc2.key_value != ''"
+            )).fetchall()
+            for row in migrated:
+                uid, api_key_val, model_val = row
+                existing = conn.execute(text(
+                    "SELECT id FROM roboflow_model WHERE user_id = :uid AND model_endpoint = :ep"
+                ), {"uid": uid, "ep": model_val}).fetchone()
+                if not existing:
+                    conn.execute(text(
+                        "INSERT INTO roboflow_model (user_id, name, model_endpoint, api_key, alert_mode) "
+                        "VALUES (:uid, :name, :ep, :key, 'log_only')"
+                    ), {"uid": uid, "name": "Modèle principal", "ep": model_val, "key": api_key_val})
+                    logger.info(f"[DB] Migrated SystemConfig Roboflow → RoboflowModel for user {uid}")
+        except Exception as e:
+            logger.warning(f"[DB] Roboflow migration: {e}")
+
         conn.commit()
 
     # Démarrer le worker ANPR (une seule fois, au premier request)
@@ -385,6 +419,18 @@ def create_tables():
     from summary_worker import start_summary_worker
 
     start_summary_worker(app, LATEST_FRAMES, CAMERA_STATUS, BLUE_FLASH_LAST)
+
+
+def get_max_roboflow_models(user):
+    mode = getattr(user, "subscription_mode", "standard") or "standard"
+    limits = {
+        "standard": 1,
+        "pro": 3,
+        "emergency": 5,
+        "enterprise": -1,
+        "custom": -1,
+    }
+    return limits.get(mode, 1)
 
 
 def get_max_notifications(user):
@@ -1203,15 +1249,8 @@ def dashboard():
     user = User.query.get(user_id)
     subscription_mode = getattr(user, "subscription_mode", "standard") or "standard"
 
-    rf_key_cfg = SystemConfig.query.filter_by(
-        user_id=user_id, key_name="roboflow_api_key"
-    ).first()
-    rf_model_cfg = SystemConfig.query.filter_by(
-        user_id=user_id, key_name="roboflow_model"
-    ).first()
-
-    rf_key = rf_key_cfg.key_value if rf_key_cfg else ""
-    rf_model = rf_model_cfg.key_value if rf_model_cfg else ""
+    roboflow_models = RoboflowModel.query.filter_by(user_id=user_id).all()
+    max_rf_models = get_max_roboflow_models(user)
 
     # Tous les passages récents (50 derniers)
     recent_detections = (
@@ -1232,8 +1271,8 @@ def dashboard():
         targets=targets,
         blacklist=blacklist,
         subscription_mode=subscription_mode,
-        rf_key=rf_key,
-        rf_model=rf_model,
+        roboflow_models=roboflow_models,
+        max_rf_models=max_rf_models,
         recent_detections=recent_detections,
         recent_alerts=recent_alerts,
         max_targets=max_targets,
@@ -1302,20 +1341,91 @@ def camera_view(camera_id):
 @app.route("/dashboard/update_ai_config", methods=["POST"])
 @require_auth
 def update_ai_config():
+    """Legacy route — redirige vers le nouveau système multi-modèle."""
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/dashboard/roboflow/add", methods=["POST"])
+@require_auth
+def roboflow_add():
     user_id = session["user_id"]
-    rf_key = request.form.get("roboflow_key", "")
-    rf_model = request.form.get("roboflow_model", "")  # Ex: police-detector/1
+    user = User.query.get(user_id)
+    max_models = get_max_roboflow_models(user)
+    current_count = RoboflowModel.query.filter_by(user_id=user_id).count()
 
-    # On utilise SystemConfig existant pour sauvegarder (plus flexible qu'ajouter des colonnes)
-    for key, val in [("roboflow_api_key", rf_key), ("roboflow_model", rf_model)]:
-        cfg = SystemConfig.query.filter_by(user_id=user_id, key_name=key).first()
-        if not cfg:
-            cfg = SystemConfig(user_id=user_id, key_name=key)
-            db.session.add(cfg)
-        cfg.key_value = val
+    if max_models != -1 and current_count >= max_models:
+        flash(f"Limite atteinte ({max_models} modèle(s) pour votre abonnement).", "error")
+        return redirect(url_for("dashboard"))
 
+    name = request.form.get("name", "").strip()
+    endpoint = request.form.get("model_endpoint", "").strip()
+    api_key = request.form.get("api_key", "").strip()
+    alert_mode = request.form.get("alert_mode", "log_only")
+    alert_classes = request.form.get("alert_classes", "").strip()
+    alert_priority = request.form.get("alert_priority", "normal")
+
+    if not name or not endpoint or not api_key:
+        flash("Nom, endpoint et clé API sont requis.", "error")
+        return redirect(url_for("dashboard"))
+
+    model = RoboflowModel(
+        user_id=user_id,
+        name=name,
+        model_endpoint=endpoint,
+        api_key=api_key,
+        alert_mode=alert_mode,
+        alert_priority=alert_priority,
+    )
+    if alert_mode == "alert_on_classes" and alert_classes:
+        model.set_alert_classes([c.strip() for c in alert_classes.split(",") if c.strip()])
+    db.session.add(model)
     db.session.commit()
-    flash("Configuration du modèle Roboflow mise à jour.", "success")
+    flash(f"Modèle '{name}' ajouté.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/dashboard/roboflow/<int:model_id>/update", methods=["POST"])
+@require_auth
+def roboflow_update(model_id):
+    model = RoboflowModel.query.filter_by(id=model_id, user_id=session["user_id"]).first()
+    if not model:
+        flash("Modèle non trouvé.", "error")
+        return redirect(url_for("dashboard"))
+
+    model.name = request.form.get("name", model.name).strip()
+    model.model_endpoint = request.form.get("model_endpoint", model.model_endpoint).strip()
+    new_key = request.form.get("api_key", "").strip()
+    if new_key:
+        model.api_key = new_key
+    model.alert_mode = request.form.get("alert_mode", model.alert_mode)
+    model.alert_priority = request.form.get("alert_priority", model.alert_priority)
+    alert_classes = request.form.get("alert_classes", "").strip()
+    model.set_alert_classes([c.strip() for c in alert_classes.split(",") if c.strip()] if alert_classes else [])
+    db.session.commit()
+    flash(f"Modèle '{model.name}' mis à jour.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/dashboard/roboflow/<int:model_id>/delete", methods=["POST"])
+@require_auth
+def roboflow_delete(model_id):
+    model = RoboflowModel.query.filter_by(id=model_id, user_id=session["user_id"]).first()
+    if model:
+        name = model.name
+        db.session.delete(model)
+        db.session.commit()
+        flash(f"Modèle '{name}' supprimé.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/dashboard/roboflow/<int:model_id>/toggle", methods=["POST"])
+@require_auth
+def roboflow_toggle(model_id):
+    model = RoboflowModel.query.filter_by(id=model_id, user_id=session["user_id"]).first()
+    if model:
+        model.is_active = not model.is_active
+        db.session.commit()
+        flash(f"Modèle '{model.name}' {'activé' if model.is_active else 'désactivé'}.", "success")
     return redirect(url_for("dashboard"))
 
 

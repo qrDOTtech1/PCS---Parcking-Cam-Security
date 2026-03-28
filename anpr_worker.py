@@ -199,37 +199,76 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                             Camera,
                             Blacklist,
                             PlateDetection,
-                            SystemConfig,
+                            RoboflowModel,
                         )
 
-                        # Lecture de la config IA Roboflow pour l'utilisateur
-                        rf_key_cfg = SystemConfig.query.filter_by(
-                            user_id=camera.user_id, key_name="roboflow_api_key"
-                        ).first()
-                        rf_model_cfg = SystemConfig.query.filter_by(
-                            user_id=camera.user_id, key_name="roboflow_model"
-                        ).first()
-
-                        rf_key = (
-                            rf_key_cfg.key_value
-                            if rf_key_cfg
-                            else os.environ.get("ROBOFLOW_API_KEY")
-                        )
-                        rf_model = (
-                            rf_model_cfg.key_value
-                            if rf_model_cfg
-                            else os.environ.get("ROBOFLOW_MODEL")
-                        )
-
+                        # ── 1. YOLO + OCR (local) ──
                         try:
                             results = eventlet.tpool.execute(
-                                engine.detect_plates, frame_bytes, rf_key, rf_model
+                                engine.detect_plates, frame_bytes
                             )
                         except Exception as e:
                             logger.warning(
                                 f"[ANPR Worker] Inference error cam {cam_id}: {e}"
                             )
                             continue
+
+                        # ── 2. Roboflow multi-modèle ──
+                        rf_models = RoboflowModel.query.filter_by(
+                            user_id=camera.user_id, is_active=True
+                        ).all()
+
+                        rf_detections = []  # list of (rf_det_dict, RoboflowModel)
+                        for rfm in rf_models:
+                            try:
+                                rf_dets = eventlet.tpool.execute(
+                                    engine.detect_with_roboflow,
+                                    frame_bytes,
+                                    rfm.api_key,
+                                    rfm.model_endpoint,
+                                )
+                                for rd in rf_dets:
+                                    rf_detections.append((rd, rfm))
+                                if rf_dets:
+                                    logger.info(
+                                        f"[ANPR] Roboflow model={rfm.name}: "
+                                        f"{len(rf_dets)} detections"
+                                    )
+                            except Exception as e:
+                                logger.warning(
+                                    f"[ANPR] Roboflow error model={rfm.name}: {e}"
+                                )
+
+                        # ── 3. Merger Roboflow avec YOLO (IoU > 0.4) ──
+                        # Enrichir les détections YOLO avec les classes Roboflow
+                        for rd, rfm in rf_detections:
+                            rf_bbox = rd.get("bbox", [0, 0, 0, 0])
+                            merged = False
+                            for det in results:
+                                iou = compute_iou(rf_bbox, det.get("bbox", [0, 0, 0, 0]))
+                                if iou > 0.4:
+                                    # Enrichir la détection YOLO existante
+                                    det["rf_class"] = rd.get("rf_class", "")
+                                    det["rf_model_name"] = rfm.name
+                                    det["rf_confidence"] = rd.get("confidence", 0)
+                                    if det["vehicle_type"] == "unknown":
+                                        det["vehicle_type"] = rd.get("vehicle_type", det["vehicle_type"])
+                                    if det["vehicle_color"] == "unknown":
+                                        det["vehicle_color"] = rd.get("vehicle_color", det["vehicle_color"])
+                                    merged = True
+                                    break
+                            if not merged:
+                                # Détection Roboflow sans correspondance YOLO
+                                results.append({
+                                    "plate": None,
+                                    "confidence": rd.get("confidence", 0),
+                                    "bbox": rf_bbox,
+                                    "vehicle_type": rd.get("vehicle_type", "unknown"),
+                                    "vehicle_color": rd.get("vehicle_color", "unknown"),
+                                    "rf_class": rd.get("rf_class", ""),
+                                    "rf_model_name": rfm.name,
+                                    "rf_confidence": rd.get("confidence", 0),
+                                })
 
                         # Chargement des objets suivis (tracking)
                         if cam_id not in CAMERA_TRACKS:
@@ -242,6 +281,8 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                             veh_type = detection.get("vehicle_type", "unknown")
                             veh_color = detection.get("vehicle_color", "unknown")
                             bbox = detection.get("bbox")
+                            rf_class = detection.get("rf_class", "")
+                            rf_model_name = detection.get("rf_model_name", "")
 
                             # 1. Vérification avec les frames précédentes (Tracking IoU)
                             best_iou = 0.0
@@ -293,7 +334,7 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                             dedup_key = (
                                 (cam_id, plate)
                                 if plate
-                                else (cam_id, veh_type, veh_color)
+                                else (cam_id, veh_type, veh_color, rf_class)
                             )
                             last_seen = RECENT_DETECTIONS.get(dedup_key, 0)
 
@@ -337,9 +378,6 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                     match_plate=False,
                                 ).all()
                                 for rule in type_color_rules:
-                                    # ⚠️ Sécurité : une règle sans plaque DOIT avoir
-                                    # au moins un critère spécifique (type OU couleur).
-                                    # Sinon elle devient un wildcard qui matche TOUT.
                                     type_is_specific = (
                                         rule.vehicle_type
                                         and rule.vehicle_type not in ("any", "")
@@ -369,12 +407,42 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
 
                             is_threat = matched_rule is not None
 
+                            # ── Roboflow per-model alert logic ──
+                            rf_alert = False
+                            rf_alert_priority = "normal"
+                            rf_alert_label = ""
+                            if rf_class and rf_model_name:
+                                # Trouver le modèle correspondant
+                                rfm_match = None
+                                for rfm in rf_models:
+                                    if rfm.name == rf_model_name:
+                                        rfm_match = rfm
+                                        break
+                                if rfm_match:
+                                    if rfm_match.alert_mode == "alert_all":
+                                        rf_alert = True
+                                        rf_alert_priority = rfm_match.alert_priority or "normal"
+                                        rf_alert_label = f"IA: {rf_class} ({rfm_match.name})"
+                                    elif rfm_match.alert_mode == "alert_on_classes":
+                                        alert_classes = rfm_match.get_alert_classes()
+                                        # Match case-insensitive
+                                        if any(
+                                            rf_class.lower() == c.lower()
+                                            for c in alert_classes
+                                        ):
+                                            rf_alert = True
+                                            rf_alert_priority = rfm_match.alert_priority or "normal"
+                                            rf_alert_label = f"IA: {rf_class} ({rfm_match.name})"
+                                    # log_only → rf_alert reste False
+
                             # Log en DB : tout véhicule identifiable (pas le fallback "unknown")
                             # + toujours logger les menaces même si YOLO n'a rien vu
+                            # + toujours logger les détections Roboflow
                             should_log = (
                                 plate is not None          # plaque lue
                                 or veh_type != "unknown"   # véhicule identifié (car, bus…)
                                 or is_threat               # menace même sans plaque
+                                or rf_class                # détection Roboflow
                             )
                             if should_log:
                                 det = PlateDetection(
@@ -384,7 +452,9 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                     vehicle_type=veh_type,
                                     vehicle_color=veh_color,
                                     confidence=confidence,
-                                    is_threat=is_threat,
+                                    is_threat=is_threat or rf_alert,
+                                    roboflow_model_name=rf_model_name,
+                                    detected_class=rf_class,
                                 )
                                 db.session.add(det)
                                 db.session.commit()
@@ -398,10 +468,12 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                         "vehicle_type": veh_type,
                                         "vehicle_color": veh_color,
                                         "confidence": round(confidence, 3),
-                                        "is_threat": is_threat,
+                                        "is_threat": is_threat or rf_alert,
                                         "camera_name": camera.name,
                                         "camera_id": cam_id,
                                         "detected_at": det.detected_at.strftime("%H:%M:%S"),
+                                        "roboflow_model_name": rf_model_name,
+                                        "detected_class": rf_class,
                                     },
                                     room=f"user_{camera.user_id}",
                                 )
@@ -410,14 +482,26 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                 f"[ANPR] cam={camera.name} plate={plate} "
                                 f"type={veh_type} color={veh_color} "
                                 f"conf={confidence:.2f} threat={is_threat}"
+                                f"{' rf=' + rf_class + '(' + rf_model_name + ')' if rf_class else ''}"
                             )
 
-                            # Alerte si blacklisté
-                            if is_threat:
-                                label = (
-                                    matched_rule.alert_label or "Véhicule Suspect"
-                                ).strip()
-                                priority = matched_rule.alert_priority or "normal"
+                            # Alerte si blacklisté OU alerte Roboflow
+                            if is_threat or rf_alert:
+                                if matched_rule:
+                                    label = (
+                                        matched_rule.alert_label or "Véhicule Suspect"
+                                    ).strip()
+                                    priority = matched_rule.alert_priority or "normal"
+                                    reason = matched_rule.description
+                                elif rf_alert:
+                                    label = rf_alert_label
+                                    priority = rf_alert_priority
+                                    reason = f"Détecté par modèle IA: {rf_model_name}"
+                                else:
+                                    label = "Véhicule Suspect"
+                                    priority = "normal"
+                                    reason = "Correspondance blacklist"
+
                                 priority_icon = {
                                     "critical": "🔴",
                                     "high": "🟠",
@@ -429,12 +513,14 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                     if plate
                                     else f"Type: {veh_type} | Couleur: {veh_color}"
                                 )
+                                if rf_class:
+                                    plate_line += f"\nClasse IA: {rf_class}"
                                 alert_msg = (
                                     f"{priority_icon} ALERTE PCS {priority_icon}\n"
                                     f"{label}!\n"
                                     f"{plate_line}\n"
                                     f"Caméra: {camera.name}\n"
-                                    f"Raison: {matched_rule.description}"
+                                    f"Raison: {reason}"
                                 )
                                 # Générer un GIF des dernières frames si le buffer est disponible
                                 gif_bytes = None
@@ -462,7 +548,9 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                         "vehicle_color": veh_color,
                                         "label": label,
                                         "priority": priority,
-                                        "reason": matched_rule.description,
+                                        "reason": reason,
+                                        "rf_class": rf_class,
+                                        "rf_model": rf_model_name,
                                     },
                                     room=f"user_{camera.user_id}",
                                 )
