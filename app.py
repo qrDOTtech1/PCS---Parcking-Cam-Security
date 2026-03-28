@@ -143,7 +143,15 @@ def send_alert(user_id, message, gif_bytes=None):
                 continue
 
             try:
-                requests.get(url, timeout=3)
+                # Arme Nucléaire Anti-DNS: Frappe directe sur l'IP avec Header Host forcé
+                if "signal.callmebot.com" in url:
+                    # On intercepte l'URL, on l'explose et on injecte l'IP
+                    url_ip = url.replace("signal.callmebot.com", "13.38.186.117")
+                    headers = {"Host": "signal.callmebot.com"}
+                    # verify=False est crucial ici car on tape une IP (le certificat ne sera pas reconnu)
+                    requests.get(url_ip, headers=headers, timeout=10, verify=False)
+                else:
+                    requests.get(url, timeout=10)
             except Exception as e:
                 logger.error(f"Erreur Signal {phone_display}: {e}")
 
