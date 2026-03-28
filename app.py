@@ -1286,6 +1286,9 @@ def add_blacklist():
     desc = request.form.get("desc")
 
     vehicle_type = request.form.get("vehicle_type", "any")
+    if vehicle_type == "custom":
+        vehicle_type = request.form.get("vehicle_type_custom", "any").strip()
+
     vehicle_color = request.form.get("vehicle_color", "any")
     alert_label = request.form.get("alert_label", "").strip()
     alert_priority = request.form.get("alert_priority", "normal")

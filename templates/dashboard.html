@@ -337,13 +337,15 @@
                             <div class="grid grid-cols-2 gap-3">
                                 <div>
                                     <label class="block text-xs font-medium text-gray-500 mb-1">Type de véhicule</label>
-                                    <select name="vehicle_type" id="f_vehicle_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                    <select name="vehicle_type" id="f_vehicle_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" onchange="checkCustomType(this)">
                                         <option value="any">Any / Tous</option>
                                         <option value="car">Car / Voiture</option>
                                         <option value="truck">Truck / Camion</option>
                                         <option value="bus">Bus</option>
                                         <option value="motorcycle">Moto</option>
+                                        <option value="custom">Custom (Roboflow)...</option>
                                     </select>
+                                    <input type="text" name="vehicle_type_custom" id="f_vehicle_type_custom" placeholder="ex: flic, pompier..." class="w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg text-sm hidden">
                                 </div>
                                 <div>
                                     <label class="block text-xs font-medium text-gray-500 mb-1">Couleur du véhicule</label>
@@ -635,6 +637,17 @@
             }, 180);
         }
 
+        function checkCustomType(select) {
+            const customInput = document.getElementById('f_vehicle_type_custom');
+            if (select.value === 'custom') {
+                customInput.classList.remove('hidden');
+                customInput.required = true;
+            } else {
+                customInput.classList.add('hidden');
+                customInput.required = false;
+            }
+        }
+
         // ── Quick presets for emergency mode ──
         const PRESETS = {
             police: {
@@ -663,7 +676,18 @@
             const p = PRESETS[key];
             if (!p) return;
             const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-            set('f_vehicle_type',  p.vehicle_type);
+            
+            // Handle custom type preset correctly
+            const typeSelect = document.getElementById('f_vehicle_type');
+            if (key === 'police' || key === 'samu' || key === 'pompiers') {
+                typeSelect.value = 'custom';
+                checkCustomType(typeSelect);
+                document.getElementById('f_vehicle_type_custom').value = key === 'police' ? 'flic' : key;
+            } else {
+                typeSelect.value = p.vehicle_type;
+                checkCustomType(typeSelect);
+            }
+            
             set('f_vehicle_color', p.vehicle_color);
             set('f_alert_label',   p.alert_label);
             set('f_alert_priority',p.alert_priority);
