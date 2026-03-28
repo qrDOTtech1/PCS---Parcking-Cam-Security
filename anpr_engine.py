@@ -235,26 +235,30 @@ class ANPREngine:
 
         final.extend(seen_plates.values())
 
-        # Étape 3 : Intégration Roboflow (Modèle Expert Custom)
+        # Étape 3 : Intégration Roboflow (Modèle Expert Custom) via InferenceHTTPClient
         if roboflow_key and roboflow_model:
-            import requests
-            import base64
+            import os
 
             try:
-                # Utilisation de l'API standard Roboflow Inference API
-                # L'image est encodée en base64 pour un POST stable
-                b64_img = base64.b64encode(image_bytes).decode("ascii")
-                url = f"https://detect.roboflow.com/{roboflow_model}?api_key={roboflow_key}"
+                from inference_sdk import InferenceHTTPClient
 
-                rf_res = requests.post(
-                    url,
-                    data=b64_img,
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    timeout=3.0,
+                # On instancie le client (peut-être optimisé en le rendant statique)
+                client = InferenceHTTPClient(
+                    api_url="https://detect.roboflow.com", api_key=roboflow_key
                 )
 
-                if rf_res.status_code == 200:
-                    predictions = rf_res.json().get("predictions", [])
+                import cv2
+                import numpy as np
+
+                # Inference SDK takes a numpy array as input directly
+                img_array = np.frombuffer(image_bytes, dtype=np.uint8)
+                img_cv2 = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+                # perform inference
+                rf_res = client.infer(img_cv2, model_id=roboflow_model)
+
+                if rf_res and "predictions" in rf_res:
+                    predictions = rf_res.get("predictions", [])
                     for p in predictions:
                         rf_conf = p.get("confidence", 0)
                         if (
@@ -301,13 +305,9 @@ class ANPREngine:
                                     "vehicle_color": color,
                                 }
                             )
-                else:
-                    logger.warning(
-                        f"[ANPR] Roboflow API Error: {rf_res.status_code} - {rf_res.text}"
-                    )
 
             except Exception as e:
-                logger.error(f"[ANPR] Roboflow Request Failed: {e}")
+                logger.error(f"[ANPR] Roboflow Inference SDK Request Failed: {e}")
 
         if any(d["plate"] for d in final):
             logger.info(
