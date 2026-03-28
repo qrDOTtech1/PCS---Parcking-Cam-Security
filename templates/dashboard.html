@@ -156,16 +156,35 @@
                     <form method="POST" action="{{ url_for('add_target') }}" class="space-y-3 border-t pt-4">
                         <input type="text" name="name" placeholder="Name" required class="w-full px-3 py-2 border rounded-lg text-sm">
                         <select name="platform" class="w-full px-3 py-2 border rounded-lg text-sm">
-                            <option value="signal">Signal</option>
+                            <option value="signal">Signal / CallMeBot</option>
                             <option value="telegram">Telegram</option>
                         </select>
-                        <input type="text" name="signal_url" placeholder="Signal URL / API Key" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <input type="text" name="signal_url" placeholder="URL CallMeBot / API Key" class="w-full px-3 py-2 border rounded-lg text-sm">
                         <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg text-sm">Ajouter</button>
                     </form>
                 </div>
             </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-8">
+                <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+                    <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                        Roboflow AI Integration
+                    </h2>
+                </div>
+                <div class="p-6">
+                    <p class="text-sm text-gray-500 mb-4">Connectez votre propre modèle Roboflow pour une détection experte (ex: véhicules de police). Le système fusionnera ses prédictions avec YOLOv11.</p>
+                    <form method="POST" action="{{ url_for('update_ai_config') }}" class="space-y-3">
+                        <input type="text" name="roboflow_key" placeholder="API Key (ex: xYz123aBc)" value="{{ rf_key }}" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <input type="text" name="roboflow_model" placeholder="Model Endpoint (ex: police-detector/1)" value="{{ rf_model }}" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <button type="submit" class="w-full bg-purple-600 text-white py-2 rounded-lg text-sm">Sauvegarder</button>
+                    </form>
+                </div>
+            </div>
             
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-2">
                 <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
                     <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
                         <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">

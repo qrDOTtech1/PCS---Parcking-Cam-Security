@@ -100,7 +100,22 @@ class ANPREngine:
         except Exception:
             return "unknown"
 
-    def detect_plates(self, image_bytes):
+    def _compute_iou(self, boxA, boxB):
+        if not boxA or not boxB or len(boxA) != 4 or len(boxB) != 4:
+            return 0.0
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[2], boxB[2])
+        yB = min(boxA[3], boxB[3])
+        interArea = max(0, float(xB - xA)) * max(0, float(yB - yA))
+        boxAArea = float(boxA[2] - boxA[0]) * float(boxA[3] - boxA[1])
+        boxBArea = float(boxB[2] - boxB[0]) * float(boxB[3] - boxB[1])
+        denom = boxAArea + boxBArea - interArea
+        if denom <= 0:
+            return 0.0
+        return interArea / denom
+
+    def detect_plates(self, image_bytes, roboflow_key=None, roboflow_model=None):
         """
         Détecte les véhicules et plaques dans une image JPEG brute.
 
@@ -219,6 +234,80 @@ class ANPREngine:
                     final.append(d)
 
         final.extend(seen_plates.values())
+
+        # Étape 3 : Intégration Roboflow (Modèle Expert Custom)
+        if roboflow_key and roboflow_model:
+            import requests
+            import base64
+
+            try:
+                # Utilisation de l'API standard Roboflow Inference API
+                # L'image est encodée en base64 pour un POST stable
+                b64_img = base64.b64encode(image_bytes).decode("ascii")
+                url = f"https://detect.roboflow.com/{roboflow_model}?api_key={roboflow_key}"
+
+                rf_res = requests.post(
+                    url,
+                    data=b64_img,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    timeout=3.0,
+                )
+
+                if rf_res.status_code == 200:
+                    predictions = rf_res.json().get("predictions", [])
+                    for p in predictions:
+                        rf_conf = p.get("confidence", 0)
+                        if (
+                            rf_conf < 0.4
+                        ):  # Seuil Roboflow custom (peut être ajustable plus tard)
+                            continue
+
+                        rf_class = p.get("class", "police").lower()
+                        # Roboflow renvoie le centre x,y et width, height. On convertit en x1, y1, x2, y2
+                        w_half = p["width"] / 2
+                        h_half = p["height"] / 2
+                        x1 = int(p["x"] - w_half)
+                        y1 = int(p["y"] - h_half)
+                        x2 = int(p["x"] + w_half)
+                        y2 = int(p["y"] + h_half)
+                        rf_bbox = [x1, y1, x2, y2]
+
+                        # Trouver la détection YOLO correspondante (IoU)
+                        matched = False
+                        for d in final:
+                            iou = self._compute_iou(rf_bbox, d.get("bbox"))
+                            if (
+                                iou > 0.4
+                            ):  # Fusion des modèles si 40% de la boîte se chevauche
+                                d["vehicle_type"] = rf_class
+                                # On boost la confidence si le modèle expert est sûr
+                                if rf_conf > d["confidence"]:
+                                    d["confidence"] = round(rf_conf, 3)
+                                matched = True
+                                break
+
+                        # Si YOLO l'a complètement raté (parce qu'on a mis conf à 0.45)
+                        # et que Roboflow l'a trouvé, on l'ajoute.
+                        if not matched:
+                            color = self._detect_color(
+                                img[max(0, y1) : min(h, y2), max(0, x1) : min(w, x2)]
+                            )
+                            final.append(
+                                {
+                                    "plate": None,
+                                    "confidence": round(rf_conf, 3),
+                                    "bbox": rf_bbox,
+                                    "vehicle_type": rf_class,
+                                    "vehicle_color": color,
+                                }
+                            )
+                else:
+                    logger.warning(
+                        f"[ANPR] Roboflow API Error: {rf_res.status_code} - {rf_res.text}"
+                    )
+
+            except Exception as e:
+                logger.error(f"[ANPR] Roboflow Request Failed: {e}")
 
         if any(d["plate"] for d in final):
             logger.info(

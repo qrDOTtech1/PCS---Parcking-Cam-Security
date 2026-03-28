@@ -193,9 +193,36 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                                 )
 
                         # Inference dans un vrai thread OS (eventlet.tpool)
+                        from models import (
+                            db,
+                            Camera,
+                            Blacklist,
+                            PlateDetection,
+                            SystemConfig,
+                        )
+
+                        # Lecture de la config IA Roboflow pour l'utilisateur
+                        rf_key_cfg = SystemConfig.query.filter_by(
+                            user_id=camera.user_id, key_name="roboflow_api_key"
+                        ).first()
+                        rf_model_cfg = SystemConfig.query.filter_by(
+                            user_id=camera.user_id, key_name="roboflow_model"
+                        ).first()
+
+                        rf_key = (
+                            rf_key_cfg.key_value
+                            if rf_key_cfg
+                            else os.environ.get("ROBOFLOW_API_KEY")
+                        )
+                        rf_model = (
+                            rf_model_cfg.key_value
+                            if rf_model_cfg
+                            else os.environ.get("ROBOFLOW_MODEL")
+                        )
+
                         try:
                             results = eventlet.tpool.execute(
-                                engine.detect_plates, frame_bytes
+                                engine.detect_plates, frame_bytes, rf_key, rf_model
                             )
                         except Exception as e:
                             logger.warning(

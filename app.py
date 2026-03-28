@@ -1077,6 +1077,16 @@ def dashboard():
     user = User.query.get(user_id)
     subscription_mode = getattr(user, "subscription_mode", "standard") or "standard"
 
+    rf_key_cfg = SystemConfig.query.filter_by(
+        user_id=user_id, key_name="roboflow_api_key"
+    ).first()
+    rf_model_cfg = SystemConfig.query.filter_by(
+        user_id=user_id, key_name="roboflow_model"
+    ).first()
+
+    rf_key = rf_key_cfg.key_value if rf_key_cfg else ""
+    rf_model = rf_model_cfg.key_value if rf_model_cfg else ""
+
     return render_template(
         "dashboard.html",
         username=session["username"],
@@ -1084,6 +1094,8 @@ def dashboard():
         targets=targets,
         blacklist=blacklist,
         subscription_mode=subscription_mode,
+        rf_key=rf_key,
+        rf_model=rf_model,
     )
 
 
@@ -1146,10 +1158,23 @@ def camera_view(camera_id):
     )
 
 
-@app.route("/dashboard/update_config", methods=["POST"])
+@app.route("/dashboard/update_ai_config", methods=["POST"])
 @require_auth
-def update_config():
-    flash("Configuration mise à jour.", "success")
+def update_ai_config():
+    user_id = session["user_id"]
+    rf_key = request.form.get("roboflow_key", "")
+    rf_model = request.form.get("roboflow_model", "")  # Ex: police-detector/1
+
+    # On utilise SystemConfig existant pour sauvegarder (plus flexible qu'ajouter des colonnes)
+    for key, val in [("roboflow_api_key", rf_key), ("roboflow_model", rf_model)]:
+        cfg = SystemConfig.query.filter_by(user_id=user_id, key_name=key).first()
+        if not cfg:
+            cfg = SystemConfig(user_id=user_id, key_name=key)
+            db.session.add(cfg)
+        cfg.key_value = val
+
+    db.session.commit()
+    flash("Configuration du modèle Roboflow mise à jour.", "success")
     return redirect(url_for("dashboard"))
 
 
