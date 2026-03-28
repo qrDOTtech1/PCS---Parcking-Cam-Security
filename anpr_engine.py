@@ -16,12 +16,25 @@ Usage:
 """
 
 import re
+import socket
+import threading
 import logging
 import eventlet
+import eventlet.patcher
 import eventlet.tpool
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Récupère le vrai socket.getaddrinfo AVANT monkey-patch (ou après, via patcher.original)
+# Utilisé pour bypasser le DNS eventlet qui échoue sur Railway
+try:
+    _REAL_GETADDRINFO = eventlet.patcher.original("socket").getaddrinfo
+except Exception:
+    _REAL_GETADDRINFO = None
+
+# Lock pour le swap DNS (thread-safe — tpool peut avoir plusieurs threads)
+_DNS_FIX_LOCK = threading.Lock()
 
 
 def normalize_plate(plate_str):
@@ -270,7 +283,18 @@ class ANPREngine:
                 client = self._rf_clients[roboflow_key]
 
                 # img est déjà décodé plus haut — pas besoin de re-décoder les bytes
-                rf_res = client.infer(img, model_id=roboflow_model)
+                # Bypass DNS eventlet : swap temporaire de getaddrinfo vers la vraie implémentation OS
+                # (eventlet monkey-patch casse la résolution DNS sur Railway)
+                if _REAL_GETADDRINFO is not None:
+                    with _DNS_FIX_LOCK:
+                        old_gai = socket.getaddrinfo
+                        socket.getaddrinfo = _REAL_GETADDRINFO
+                        try:
+                            rf_res = client.infer(img, model_id=roboflow_model)
+                        finally:
+                            socket.getaddrinfo = old_gai
+                else:
+                    rf_res = client.infer(img, model_id=roboflow_model)
 
                 if rf_res and "predictions" in rf_res:
                     predictions = rf_res.get("predictions", [])

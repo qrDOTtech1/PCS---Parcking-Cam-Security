@@ -336,14 +336,30 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
                                     match_plate=False,
                                 ).all()
                                 for rule in type_color_rules:
+                                    # ⚠️ Sécurité : une règle sans plaque DOIT avoir
+                                    # au moins un critère spécifique (type OU couleur).
+                                    # Sinon elle devient un wildcard qui matche TOUT.
+                                    type_is_specific = (
+                                        rule.vehicle_type
+                                        and rule.vehicle_type not in ("any", "")
+                                    )
+                                    color_is_specific = (
+                                        rule.vehicle_color
+                                        and rule.vehicle_color not in ("any", "")
+                                    )
+                                    if not type_is_specific and not color_is_specific:
+                                        logger.warning(
+                                            f"[ANPR] Règle blacklist #{rule.id} ignorée "
+                                            f"(match_plate=False sans critère spécifique — wildcard)"
+                                        )
+                                        continue
+
                                     type_ok = (
-                                        not rule.vehicle_type
-                                        or rule.vehicle_type == "any"
+                                        not type_is_specific
                                         or rule.vehicle_type == veh_type
                                     )
                                     color_ok = (
-                                        not rule.vehicle_color
-                                        or rule.vehicle_color == "any"
+                                        not color_is_specific
                                         or rule.vehicle_color == veh_color
                                     )
                                     if type_ok and color_ok:
