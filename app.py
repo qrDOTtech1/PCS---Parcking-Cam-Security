@@ -330,6 +330,20 @@ def create_tables():
             )
         except:
             pass
+        # Nettoyage des anciennes entrées plate_normalized au format "type:couleur"
+        # (ancien format avant le fix — ces lignes n'ont pas de vraie plaque)
+        try:
+            conn.execute(
+                text(
+                    "UPDATE plate_detection SET plate_normalized = '' "
+                    "WHERE plate_normalized LIKE '%:%'"
+                )
+            )
+            conn.commit()
+            logger.info("[DB] Cleanup: old type:color plate_normalized entries cleared")
+        except Exception as e:
+            logger.warning(f"[DB] Cleanup plate_normalized: {e}")
+
         conn.commit()
 
     # Démarrer le worker ANPR (une seule fois, au premier request)
