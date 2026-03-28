@@ -247,9 +247,6 @@ class ANPREngine:
                     api_url="https://detect.roboflow.com", api_key=roboflow_key
                 )
 
-                import cv2
-                import numpy as np
-
                 # Inference SDK takes a numpy array as input directly
                 img_array = np.frombuffer(image_bytes, dtype=np.uint8)
                 img_cv2 = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
