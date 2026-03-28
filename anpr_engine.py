@@ -262,7 +262,7 @@ class ANPREngine:
                         ):  # Seuil Roboflow custom (peut être ajustable plus tard)
                             continue
 
-                        rf_class = p.get("class", "police").lower()
+                        rf_class = p.get("class", "flic").lower()
                         # Roboflow renvoie le centre x,y et width, height. On convertit en x1, y1, x2, y2
                         w_half = p["width"] / 2
                         h_half = p["height"] / 2
