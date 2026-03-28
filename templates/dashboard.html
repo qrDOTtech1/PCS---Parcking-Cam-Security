@@ -256,46 +256,114 @@
                 </div>
             </div>
             
-            <!-- Alert History Section -->
+            <!-- Historique des Passages -->
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-2">
                 <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
-                    <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
-                        <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        Historique des Alertes / Alert History
-                    </h2>
+                    <div class="flex items-center justify-between flex-wrap gap-3">
+                        <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                            </svg>
+                            Historique des Passages
+                            {% if recent_detections %}
+                            <span class="text-xs font-normal text-gray-400">({{ recent_detections|length }} derniers)</span>
+                            {% endif %}
+                        </h2>
+                        <!-- Filtres -->
+                        <div class="flex gap-1 bg-gray-100 p-1 rounded-lg text-xs">
+                            <button onclick="filterHistory('all')" id="hist-btn-all"
+                                class="px-3 py-1.5 rounded-md font-medium bg-white text-gray-700 shadow-sm transition-all">
+                                Tous
+                                {% if recent_detections %}<span class="ml-1 text-gray-400">{{ recent_detections|length }}</span>{% endif %}
+                            </button>
+                            <button onclick="filterHistory('threats')" id="hist-btn-threats"
+                                class="px-3 py-1.5 rounded-md font-medium text-gray-500 hover:text-gray-700 transition-all">
+                                🚨 Menaces
+                                {% if recent_alerts %}<span class="ml-1 text-red-500 font-bold">{{ recent_alerts|length }}</span>{% endif %}
+                            </button>
+                            <button onclick="filterHistory('plates')" id="hist-btn-plates"
+                                class="px-3 py-1.5 rounded-md font-medium text-gray-500 hover:text-gray-700 transition-all">
+                                🔤 Avec plaque
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div class="p-6">
-                    {% if recent_alerts %}
+                    {% if recent_detections %}
                     <div class="overflow-x-auto">
-                        <table class="w-full text-left text-sm">
+                        <table class="w-full text-left text-sm" id="history-table">
                             <thead>
-                                <tr class="text-gray-500 border-b border-gray-200">
+                                <tr class="text-gray-500 border-b border-gray-200 text-xs uppercase tracking-wide">
                                     <th class="pb-3 font-medium">Date & Heure</th>
                                     <th class="pb-3 font-medium">Caméra</th>
                                     <th class="pb-3 font-medium">Plaque</th>
                                     <th class="pb-3 font-medium">Type</th>
                                     <th class="pb-3 font-medium">Couleur</th>
+                                    <th class="pb-3 font-medium">Statut</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-gray-100">
-                                {% for alert in recent_alerts %}
-                                <tr class="hover:bg-gray-50 transition">
-                                    <td class="py-3 text-gray-600">{{ alert.detected_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                                    <td class="py-3 font-medium text-gray-900">{{ alert.camera.name }}</td>
-                                    <td class="py-3 font-mono text-gray-700">{% if alert.plate_normalized and not ':' in alert.plate_normalized %}{{ alert.plate_normalized }}{% else %}-{% endif %}</td>
-                                    <td class="py-3">
-                                        <span class="px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs font-semibold capitalize">{{ alert.vehicle_type }}</span>
+                            <tbody class="divide-y divide-gray-100" id="history-tbody">
+                                {% for det in recent_detections %}
+                                <tr class="hover:bg-gray-50 transition history-row
+                                    {% if det.is_threat %}threat-row{% else %}normal-row{% endif %}
+                                    {% if det.plate_normalized %}plate-row{% else %}noplate-row{% endif %}"
+                                    {% if det.is_threat %}style="background-color: #fff8f8;"{% endif %}>
+                                    <td class="py-2.5 text-gray-500 text-xs whitespace-nowrap">{{ det.detected_at.strftime('%d/%m %H:%M:%S') }}</td>
+                                    <td class="py-2.5 font-medium text-gray-800 text-xs">{{ det.camera.name if det.camera else '—' }}</td>
+                                    <td class="py-2.5">
+                                        {% if det.plate_normalized %}
+                                        <span class="font-mono font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded text-xs tracking-widest">{{ det.plate_normalized }}</span>
+                                        {% else %}
+                                        <span class="text-gray-300 text-xs">—</span>
+                                        {% endif %}
                                     </td>
-                                    <td class="py-3 capitalize text-gray-600">{{ alert.vehicle_color }}</td>
+                                    <td class="py-2.5">
+                                        <span class="px-2 py-0.5 rounded text-xs font-medium
+                                            {% if det.vehicle_type == 'car' %}bg-blue-50 text-blue-700
+                                            {% elif det.vehicle_type == 'truck' %}bg-orange-50 text-orange-700
+                                            {% elif det.vehicle_type == 'bus' %}bg-purple-50 text-purple-700
+                                            {% elif det.vehicle_type == 'motorcycle' %}bg-green-50 text-green-700
+                                            {% else %}bg-gray-100 text-gray-500{% endif %}">
+                                            {{ det.vehicle_type or '—' }}
+                                        </span>
+                                    </td>
+                                    <td class="py-2.5 text-xs text-gray-600 capitalize">
+                                        <span class="inline-flex items-center gap-1">
+                                            <span class="w-2.5 h-2.5 rounded-full inline-block border border-gray-200"
+                                                style="background-color:
+                                                    {% if det.vehicle_color == 'white' %}#fff
+                                                    {% elif det.vehicle_color == 'black' %}#222
+                                                    {% elif det.vehicle_color == 'silver' %}#c0c0c0
+                                                    {% elif det.vehicle_color == 'red' %}#ef4444
+                                                    {% elif det.vehicle_color == 'blue' %}#3b82f6
+                                                    {% elif det.vehicle_color == 'green' %}#22c55e
+                                                    {% elif det.vehicle_color == 'orange' %}#f97316
+                                                    {% elif det.vehicle_color == 'yellow' %}#eab308
+                                                    {% elif det.vehicle_color == 'purple' %}#a855f7
+                                                    {% else %}#9ca3af{% endif %}">
+                                            </span>
+                                            {{ det.vehicle_color or '—' }}
+                                        </span>
+                                    </td>
+                                    <td class="py-2.5">
+                                        {% if det.is_threat %}
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">
+                                            🚨 MENACE
+                                        </span>
+                                        {% else %}
+                                        <span class="text-gray-300 text-xs">✓ OK</span>
+                                        {% endif %}
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
                     {% else %}
-                    <p class="text-sm text-gray-500 text-center py-4">Aucune alerte récente.</p>
+                    <div class="text-center py-8">
+                        <p class="text-gray-400 text-sm">Aucun passage enregistré.</p>
+                        <p class="text-gray-300 text-xs mt-1">Les véhicules détectés apparaîtront ici automatiquement.</p>
+                    </div>
                     {% endif %}
                 </div>
             </div>
@@ -788,6 +856,27 @@
                         if (label) label.textContent = 'Gyrophare OFF';
                     }
                 });
+        }
+
+        function filterHistory(mode) {
+            const rows = document.querySelectorAll('.history-row');
+            rows.forEach(row => {
+                let show = true;
+                if (mode === 'threats') show = row.classList.contains('threat-row');
+                if (mode === 'plates') show = row.classList.contains('plate-row');
+                row.style.display = show ? '' : 'none';
+            });
+            // Update tab styles
+            ['all', 'threats', 'plates'].forEach(m => {
+                const btn = document.getElementById('hist-btn-' + m);
+                if (!btn) return;
+                if (m === mode) {
+                    btn.className = btn.className.replace('text-gray-500 hover:text-gray-700', 'bg-white text-gray-700 shadow-sm');
+                    if (!btn.className.includes('bg-white')) btn.className += ' bg-white text-gray-700 shadow-sm';
+                } else {
+                    btn.className = btn.className.replace('bg-white text-gray-700 shadow-sm', 'text-gray-500 hover:text-gray-700');
+                }
+            });
         }
 
         function switchNotifPlatform(platform) {

@@ -1092,12 +1092,15 @@ def dashboard():
     rf_key = rf_key_cfg.key_value if rf_key_cfg else ""
     rf_model = rf_model_cfg.key_value if rf_model_cfg else ""
 
-    recent_alerts = (
-        PlateDetection.query.filter_by(user_id=user_id, is_threat=True)
+    # Tous les passages récents (50 derniers)
+    recent_detections = (
+        PlateDetection.query.filter_by(user_id=user_id)
         .order_by(PlateDetection.detected_at.desc())
-        .limit(15)
+        .limit(50)
         .all()
     )
+    # Sous-liste menaces uniquement (pour badge et compatibilité)
+    recent_alerts = [d for d in recent_detections if d.is_threat]
 
     max_targets = get_max_notifications(user)
 
@@ -1110,6 +1113,7 @@ def dashboard():
         subscription_mode=subscription_mode,
         rf_key=rf_key,
         rf_model=rf_model,
+        recent_detections=recent_detections,
         recent_alerts=recent_alerts,
         max_targets=max_targets,
     )

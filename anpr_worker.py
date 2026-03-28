@@ -368,12 +368,18 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn):
 
                             is_threat = matched_rule is not None
 
-                            # Log en DB (uniquement si plaque trouvée ou menace détectée)
-                            if plate or is_threat:
+                            # Log en DB : tout véhicule identifiable (pas le fallback "unknown")
+                            # + toujours logger les menaces même si YOLO n'a rien vu
+                            should_log = (
+                                plate is not None          # plaque lue
+                                or veh_type != "unknown"   # véhicule identifié (car, bus…)
+                                or is_threat               # menace même sans plaque
+                            )
+                            if should_log:
                                 det = PlateDetection(
                                     user_id=camera.user_id,
                                     camera_id=cam_id,
-                                    plate_normalized=plate or f"{veh_type}:{veh_color}",
+                                    plate_normalized=plate or "",
                                     vehicle_type=veh_type,
                                     vehicle_color=veh_color,
                                     confidence=confidence,
