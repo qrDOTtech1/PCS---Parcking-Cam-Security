@@ -129,39 +129,111 @@
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
-                    <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
-                        <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
-                        </svg>
-                        Notification Targets / Каналы уведомлений
-                    </h2>
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                            </svg>
+                            Notifications
+                        </h2>
+                        <span class="text-xs font-semibold px-2 py-1 rounded-full
+                            {% if max_targets == -1 %}bg-green-100 text-green-700
+                            {% elif targets|length >= max_targets %}bg-red-100 text-red-700
+                            {% else %}bg-blue-100 text-blue-700{% endif %}">
+                            {{ targets|length }} / {% if max_targets == -1 %}∞{% else %}{{ max_targets }}{% endif %}
+                        </span>
+                    </div>
                 </div>
                 <div class="p-6">
-                    <form method="POST" action="{{ url_for('trigger_manual_alert') }}" class="mb-6 flex gap-2">
-                        <input type="text" name="message" placeholder="Message d'alerte..." class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                        <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium">Alerte!</button>
+                    <!-- Manual alert -->
+                    <form method="POST" action="{{ url_for('trigger_manual_alert') }}" class="mb-5 flex gap-2">
+                        <input type="text" name="message" placeholder="Message d'alerte manuel..." class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">🚨 Envoyer</button>
                     </form>
+
+                    <!-- Targets list -->
                     {% if targets %}
-                    <ul class="space-y-2 mb-4">
+                    <ul class="space-y-2 mb-5">
                         {% for t in targets %}
-                        <li class="flex justify-between items-center bg-gray-50 p-3 rounded-lg text-sm">
-                            <span>{{ t.name }} ({{ t.platform }})</span>
-                            <form method="POST" action="{{ url_for('del_target', id=t.id) }}">
-                                <button type="submit" class="text-red-500 hover:text-red-700">Delete</button>
+                        <li class="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm gap-2">
+                            <div class="flex items-center gap-2 min-w-0">
+                                {% if t.platform == 'signal' %}
+                                <span class="text-blue-600 font-bold text-xs bg-blue-100 px-2 py-0.5 rounded-full shrink-0">SIGNAL</span>
+                                {% else %}
+                                <span class="text-indigo-600 font-bold text-xs bg-indigo-100 px-2 py-0.5 rounded-full shrink-0">TG</span>
+                                {% endif %}
+                                <span class="font-medium text-gray-800 truncate">{{ t.name }}</span>
+                                {% if t.platform == 'signal' and t.api_key %}
+                                    {% if t.api_key.startswith('http') %}
+                                    <span class="text-gray-400 text-xs truncate hidden sm:block">{{ t.api_key[:50] }}{% if t.api_key|length > 50 %}…{% endif %}</span>
+                                    {% else %}
+                                    <span class="text-gray-400 text-xs hidden sm:block">apikey: {{ t.api_key[:12] }}…</span>
+                                    {% endif %}
+                                {% elif t.platform == 'telegram' and t.chat_id %}
+                                <span class="text-gray-400 text-xs hidden sm:block">chat: {{ t.chat_id }}</span>
+                                {% endif %}
+                            </div>
+                            <form method="POST" action="{{ url_for('del_target', id=t.id) }}" class="shrink-0">
+                                <button type="submit" class="text-red-400 hover:text-red-600 text-xs px-2 py-1 rounded hover:bg-red-50 transition-colors">✕</button>
                             </form>
                         </li>
                         {% endfor %}
                     </ul>
+                    {% else %}
+                    <p class="text-sm text-gray-400 italic mb-5">Aucun canal configuré.</p>
                     {% endif %}
-                    <form method="POST" action="{{ url_for('add_target') }}" class="space-y-3 border-t pt-4">
-                        <input type="text" name="name" placeholder="Name" required class="w-full px-3 py-2 border rounded-lg text-sm">
-                        <select name="platform" class="w-full px-3 py-2 border rounded-lg text-sm">
-                            <option value="signal">Signal / CallMeBot</option>
-                            <option value="telegram">Telegram</option>
-                        </select>
-                        <input type="text" name="signal_url" placeholder="URL CallMeBot / API Key" class="w-full px-3 py-2 border rounded-lg text-sm">
-                        <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg text-sm">Ajouter</button>
-                    </form>
+
+                    <!-- Add target form -->
+                    {% if max_targets == -1 or targets|length < max_targets %}
+                    <div class="border-t border-gray-100 pt-4">
+                        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Ajouter un canal</p>
+
+                        <!-- Platform tabs -->
+                        <div class="flex gap-1 mb-3 bg-gray-100 p-1 rounded-lg">
+                            <button type="button" onclick="switchNotifPlatform('signal')" id="tab-signal"
+                                class="flex-1 py-1.5 rounded-md text-xs font-medium transition-all bg-white text-blue-700 shadow-sm">
+                                📱 Signal / CallMeBot
+                            </button>
+                            <button type="button" onclick="switchNotifPlatform('telegram')" id="tab-telegram"
+                                class="flex-1 py-1.5 rounded-md text-xs font-medium transition-all text-gray-500 hover:text-gray-700">
+                                ✈️ Telegram
+                            </button>
+                        </div>
+
+                        <form method="POST" action="{{ url_for('add_target') }}" class="space-y-3">
+                            <input type="hidden" name="platform" id="notif-platform" value="signal">
+                            <input type="text" name="name" placeholder="Nom (ex: Mon Signal, Alerte Bureau)" required
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+
+                            <!-- Signal fields -->
+                            <div id="fields-signal" class="space-y-2">
+                                <input type="text" name="signal_url" id="signal_url_input"
+                                    placeholder="URL CallMeBot complète (https://api.callmebot.com/signal/send.php?phone=…&apikey=…)"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                <p class="text-xs text-gray-400">Copiez l'URL complète depuis <strong>callmebot.com/signal.php</strong> — elle contient déjà votre numéro et clé API.</p>
+                            </div>
+
+                            <!-- Telegram fields -->
+                            <div id="fields-telegram" class="space-y-2 hidden">
+                                <input type="text" name="bot_token"
+                                    placeholder="Bot Token (ex: 123456:ABC-DEF...)"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none">
+                                <input type="text" name="chat_id"
+                                    placeholder="Chat ID (ex: -1001234567890)"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none">
+                            </div>
+
+                            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition-colors">
+                                + Ajouter
+                            </button>
+                        </form>
+                    </div>
+                    {% else %}
+                    <div class="border-t border-gray-100 pt-4">
+                        <p class="text-sm text-center text-red-500 font-medium">Limite atteinte ({{ max_targets }} canaux max).</p>
+                        <p class="text-xs text-center text-gray-400 mt-1">Passez en mode Emergency pour jusqu'à 20 canaux.</p>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
 
@@ -716,6 +788,28 @@
                         if (label) label.textContent = 'Gyrophare OFF';
                     }
                 });
+        }
+
+        function switchNotifPlatform(platform) {
+            document.getElementById('notif-platform').value = platform;
+            const tabSignal = document.getElementById('tab-signal');
+            const tabTelegram = document.getElementById('tab-telegram');
+            const fieldsSignal = document.getElementById('fields-signal');
+            const fieldsTelegram = document.getElementById('fields-telegram');
+            if (platform === 'signal') {
+                tabSignal.className = tabSignal.className.replace('text-gray-500 hover:text-gray-700', 'bg-white text-blue-700 shadow-sm');
+                tabTelegram.className = tabTelegram.className.replace('bg-white text-blue-700 shadow-sm', 'text-gray-500 hover:text-gray-700');
+                // For telegram->signal we need to re-add bg-white
+                if (!tabSignal.className.includes('bg-white')) tabSignal.className += ' bg-white text-blue-700 shadow-sm';
+                fieldsSignal.classList.remove('hidden');
+                fieldsTelegram.classList.add('hidden');
+            } else {
+                tabTelegram.className = tabTelegram.className.replace('text-gray-500 hover:text-gray-700', 'bg-white text-indigo-700 shadow-sm');
+                tabSignal.className = tabSignal.className.replace('bg-white text-blue-700 shadow-sm', 'text-gray-500 hover:text-gray-700');
+                if (!tabTelegram.className.includes('bg-white')) tabTelegram.className += ' bg-white text-indigo-700 shadow-sm';
+                fieldsTelegram.classList.remove('hidden');
+                fieldsSignal.classList.add('hidden');
+            }
         }
 
         setInterval(() => {

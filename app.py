@@ -344,10 +344,15 @@ def create_tables():
 
 
 def get_max_notifications(user):
-    # Emergency: 20, Standard: 3
-    if user.subscription_mode == "emergency":
-        return 20
-    return 3
+    mode = getattr(user, "subscription_mode", "standard") or "standard"
+    limits = {
+        "standard": 2,
+        "pro": 5,
+        "emergency": 20,
+        "enterprise": -1,  # unlimited
+        "custom": -1,      # unlimited
+    }
+    return limits.get(mode, 2)
 
 
 @app.route("/upload", methods=["POST"])
@@ -1094,6 +1099,8 @@ def dashboard():
         .all()
     )
 
+    max_targets = get_max_notifications(user)
+
     return render_template(
         "dashboard.html",
         username=session["username"],
@@ -1104,6 +1111,7 @@ def dashboard():
         rf_key=rf_key,
         rf_model=rf_model,
         recent_alerts=recent_alerts,
+        max_targets=max_targets,
     )
 
 
@@ -1228,10 +1236,9 @@ def add_target():
     user = User.query.get(user_id)
 
     count = NotificationTarget.query.filter_by(user_id=user_id).count()
-    if count >= get_max_notifications(user):
-        flash(
-            f"Limite de canaux atteinte ({get_max_notifications(user)} max).", "error"
-        )
+    max_n = get_max_notifications(user)
+    if max_n != -1 and count >= max_n:
+        flash(f"Limite de canaux atteinte ({max_n} max pour votre abonnement).", "error")
         return redirect(url_for("dashboard"))
 
     name = request.form.get("name")

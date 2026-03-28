@@ -58,6 +58,10 @@ class ANPREngine:
         self._ocr = easyocr.Reader(["en"], gpu=False, verbose=False)
         logger.info("[ANPR] EasyOCR loaded.")
 
+        # Cache du client Roboflow — instancié UNE seule fois par clé API
+        # (clé → InferenceHTTPClient) pour éviter la reconnexion TLS à chaque frame
+        self._rf_clients = {}
+
         logger.info("[ANPR] Engine ready.")
 
     # COCO class id → readable vehicle type
@@ -176,6 +180,9 @@ class ANPREngine:
                         )
                     )
 
+        # Indique si YOLO a trouvé de vrais véhicules (avant le fallback)
+        yolo_found_vehicles = len(vehicle_crops) > 0
+
         # Fallback : image entière si aucun véhicule
         if not vehicle_crops:
             color = self._detect_color(img)
@@ -236,37 +243,45 @@ class ANPREngine:
         final.extend(seen_plates.values())
 
         # Étape 3 : Intégration Roboflow (Modèle Expert Custom) via InferenceHTTPClient
-        if roboflow_key and roboflow_model:
-            import os
-
+        # ⚠️  Appelé UNIQUEMENT si YOLO a trouvé au moins un vrai véhicule.
+        #     Si YOLO ne voit rien, inutile d'interroger Roboflow (économie ~90% appels).
+        if roboflow_key and roboflow_model and yolo_found_vehicles:
             try:
                 from inference_sdk import InferenceHTTPClient
 
-                # On instancie le client (peut-être optimisé en le rendant statique)
-                client = InferenceHTTPClient(
-                    api_url="https://detect.roboflow.com", api_key=roboflow_key
-                )
+                # ── Client mis en cache par clé API (évite reconnexion TLS à chaque frame) ──
+                if roboflow_key not in self._rf_clients:
+                    logger.info("[ANPR] Initializing Roboflow client (first use)")
+                    new_client = InferenceHTTPClient(
+                        api_url="https://detect.roboflow.com",
+                        api_key=roboflow_key,
+                    )
+                    # Timeout explicite sur la session requests sous-jacente
+                    # pour ne pas bloquer le tpool thread si Railway a des problèmes DNS
+                    try:
+                        new_client._session.request = lambda method, url, **kwargs: \
+                            type(new_client._session).request(
+                                new_client._session, method, url,
+                                timeout=kwargs.pop("timeout", 5), **kwargs
+                            )
+                    except Exception:
+                        pass  # Si l'SDK change d'interface, on continue sans timeout forcé
+                    self._rf_clients[roboflow_key] = new_client
+                client = self._rf_clients[roboflow_key]
 
-                # Inference SDK takes a numpy array as input directly
-                img_array = np.frombuffer(image_bytes, dtype=np.uint8)
-                img_cv2 = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-
-                # perform inference
-                rf_res = client.infer(img_cv2, model_id=roboflow_model)
+                # img est déjà décodé plus haut — pas besoin de re-décoder les bytes
+                rf_res = client.infer(img, model_id=roboflow_model)
 
                 if rf_res and "predictions" in rf_res:
                     predictions = rf_res.get("predictions", [])
                     for p in predictions:
                         rf_conf = p.get("confidence", 0)
-                        if (
-                            rf_conf < 0.4
-                        ):  # Seuil Roboflow custom (peut être ajustable plus tard)
+                        if rf_conf < 0.4:
                             continue
 
-                        # On récupère le nom de la classe que Roboflow a trouvée
-                        # S'il ne renvoie rien de clair, on met 'expert_detection' par sécurité
                         rf_class = p.get("class", "expert_detection").lower()
-                        # Roboflow renvoie le centre x,y et width, height. On convertit en x1, y1, x2, y2
+
+                        # Roboflow renvoie centre+taille → convertir en x1,y1,x2,y2
                         w_half = p["width"] / 2
                         h_half = p["height"] / 2
                         x1 = int(p["x"] - w_half)
@@ -275,26 +290,25 @@ class ANPREngine:
                         y2 = int(p["y"] + h_half)
                         rf_bbox = [x1, y1, x2, y2]
 
-                        # Trouver la détection YOLO correspondante (IoU)
+                        # Fusion IoU avec les détections YOLO existantes
                         matched = False
                         for d in final:
                             iou = self._compute_iou(rf_bbox, d.get("bbox"))
-                            if (
-                                iou > 0.4
-                            ):  # Fusion des modèles si 40% de la boîte se chevauche
+                            if iou > 0.4:
+                                # Roboflow enrichit le type de véhicule (modèle expert)
                                 d["vehicle_type"] = rf_class
-                                # On boost la confidence si le modèle expert est sûr
                                 if rf_conf > d["confidence"]:
                                     d["confidence"] = round(rf_conf, 3)
                                 matched = True
                                 break
 
-                        # Si YOLO l'a complètement raté (parce qu'on a mis conf à 0.45)
-                        # et que Roboflow l'a trouvé, on l'ajoute.
+                        # Roboflow a trouvé un véhicule que YOLO a raté → on l'ajoute
                         if not matched:
-                            color = self._detect_color(
-                                img[max(0, y1) : min(h, y2), max(0, x1) : min(w, x2)]
-                            )
+                            crop_rf = img[
+                                max(0, y1):min(h, y2),
+                                max(0, x1):min(w, x2)
+                            ]
+                            color = self._detect_color(crop_rf)
                             final.append(
                                 {
                                     "plate": None,
@@ -306,7 +320,9 @@ class ANPREngine:
                             )
 
             except Exception as e:
-                logger.error(f"[ANPR] Roboflow Inference SDK Request Failed: {e}")
+                logger.error(f"[ANPR] Roboflow error: {e}")
+                # Invalidate cached client si erreur réseau persistante
+                self._rf_clients.pop(roboflow_key, None)
 
         if any(d["plate"] for d in final):
             logger.info(
