@@ -1474,6 +1474,17 @@ def toggle_flash(camera_id):
 def del_camera(id):
     cam = Camera.query.filter_by(id=id, user_id=session["user_id"]).first()
     if cam:
+        # Supprimer les enregistrements liés (pas de cascade auto en SQLite)
+        PlateDetection.query.filter_by(camera_id=cam.id).delete()
+        CameraSummary.query.filter_by(camera_id=cam.id).delete()
+        # Nettoyer les caches mémoire
+        LATEST_FRAMES.pop(cam.id, None)
+        FRAME_BUFFERS.pop(cam.id, None)
+        FRAME_TIMESTAMPS.pop(cam.id, None)
+        FRAME_ETAGS.pop(cam.id, None)
+        FRAME_SEQUENCES.pop(cam.id, None)
+        CAMERA_STATUS.pop(cam.id, None)
+        CAMERA_SOCKETS.pop(cam.id, None)
         db.session.delete(cam)
         db.session.commit()
         flash("Caméra supprimée.", "success")

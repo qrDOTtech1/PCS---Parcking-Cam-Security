@@ -758,6 +758,56 @@
             }
         });
 
+        // Mise à jour en temps réel de l'historique des passages
+        socket.on('new_detection', function(d) {
+            const tbody = document.getElementById('history-tbody');
+            if (!tbody) return;
+
+            // Couleur mapping
+            const colorMap = {white:'#fff',black:'#222',silver:'#c0c0c0',red:'#ef4444',blue:'#3b82f6',green:'#22c55e',orange:'#f97316',yellow:'#eab308',purple:'#a855f7'};
+            const dotColor = colorMap[d.vehicle_color] || '#9ca3af';
+
+            // Type badge
+            const typeColors = {car:'bg-blue-50 text-blue-700',truck:'bg-orange-50 text-orange-700',bus:'bg-purple-50 text-purple-700',motorcycle:'bg-green-50 text-green-700'};
+            const typeCls = typeColors[d.vehicle_type] || 'bg-gray-100 text-gray-500';
+
+            // Plaque display
+            const plateHtml = (d.plate && d.plate.length >= 4)
+                ? '<span class="font-mono font-bold text-gray-900 bg-yellow-50 border border-yellow-200 px-2 py-0.5 rounded text-xs tracking-widest">' + d.plate + '</span>'
+                : '<span class="text-gray-300 text-xs">non lue</span>';
+
+            // Statut
+            const statusHtml = d.is_threat
+                ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">🚨 MENACE</span>'
+                : '<span class="text-gray-300 text-xs">✓ OK</span>';
+
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-gray-50 transition history-row ' + (d.is_threat ? 'threat-row' : 'normal-row') + ' ' + (d.plate && d.plate.length >= 4 ? 'plate-row' : 'noplate-row');
+            if (d.is_threat) tr.style.backgroundColor = '#fff8f8';
+            tr.innerHTML =
+                '<td class="py-2.5 text-gray-500 text-xs whitespace-nowrap">' + d.detected_at + '</td>' +
+                '<td class="py-2.5 font-medium text-gray-800 text-xs">' + (d.camera_name || '—') + '</td>' +
+                '<td class="py-2.5">' + plateHtml + '</td>' +
+                '<td class="py-2.5"><span class="px-2 py-0.5 rounded text-xs font-medium ' + typeCls + '">' + (d.vehicle_type || '—') + '</span></td>' +
+                '<td class="py-2.5 text-xs text-gray-600 capitalize"><span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full inline-block border border-gray-200" style="background-color:' + dotColor + '"></span>' + (d.vehicle_color || '—') + '</span></td>' +
+                '<td class="py-2.5">' + statusHtml + '</td>';
+
+            // Flash vert pour la nouvelle ligne
+            tr.style.animation = 'pulse 1s';
+
+            // Insérer en haut du tableau
+            tbody.insertBefore(tr, tbody.firstChild);
+
+            // Garder max 50 lignes
+            while (tbody.children.length > 50) {
+                tbody.removeChild(tbody.lastChild);
+            }
+
+            // Mettre à jour le compteur
+            const countSpan = document.querySelector('[data-history-count]');
+            if (countSpan) countSpan.textContent = tbody.children.length;
+        });
+
         function showFlashOverlay(color, label) {
             const overlay = document.createElement('div');
             overlay.style.cssText = `

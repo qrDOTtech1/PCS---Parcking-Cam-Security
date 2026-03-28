@@ -389,6 +389,23 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                 db.session.add(det)
                                 db.session.commit()
 
+                                # Émettre en temps réel pour le dashboard
+                                socketio.emit(
+                                    "new_detection",
+                                    {
+                                        "id": det.id,
+                                        "plate": plate or "",
+                                        "vehicle_type": veh_type,
+                                        "vehicle_color": veh_color,
+                                        "confidence": round(confidence, 3),
+                                        "is_threat": is_threat,
+                                        "camera_name": camera.name,
+                                        "camera_id": cam_id,
+                                        "detected_at": det.detected_at.strftime("%H:%M:%S"),
+                                    },
+                                    room=f"user_{camera.user_id}",
+                                )
+
                             logger.info(
                                 f"[ANPR] cam={camera.name} plate={plate} "
                                 f"type={veh_type} color={veh_color} "

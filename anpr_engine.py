@@ -464,9 +464,10 @@ class ANPREngine:
 
         final.extend(seen_plates.values())
 
-        # Étape 3 : Intégration Roboflow Serverless (urllib + base64, pas inference_sdk)
-        # ⚠️  Appelé UNIQUEMENT si YOLO a trouvé au moins un vrai véhicule.
-        if roboflow_key and roboflow_model and yolo_found_vehicles:
+        # Étape 3 : Intégration Roboflow Serverless (curl subprocess)
+        if not roboflow_key or not roboflow_model:
+            logger.debug(f"[ANPR] Roboflow skipped: key={'set' if roboflow_key else 'MISSING'} model={'set' if roboflow_model else 'MISSING'}")
+        if roboflow_key and roboflow_model:
             try:
                 rf_res = self._call_roboflow(roboflow_key, roboflow_model, image_bytes)
 
