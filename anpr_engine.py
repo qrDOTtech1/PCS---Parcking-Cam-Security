@@ -77,13 +77,28 @@ class ANPREngine:
     _VEHICLE_CLASSES = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
 
     def _detect_color(self, crop):
-        """Détecte la couleur dominante d'un crop véhicule (BGR → HSV)."""
+        """
+        Détecte la couleur dominante d'un crop véhicule (BGR → HSV).
+
+        N'utilise que la zone CENTRALE du crop (20-80% h, 15-85% w) pour
+        éviter que l'arrière-plan (herbe, ciel, bitume) fausse le résultat.
+        """
         import cv2
 
         if crop is None or crop.size == 0:
             return "unknown"
         try:
-            hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+            h_full, w_full = crop.shape[:2]
+            # Recadrer sur la zone centrale = carrosserie, pas le fond
+            y1 = int(h_full * 0.20)
+            y2 = int(h_full * 0.80)
+            x1 = int(w_full * 0.15)
+            x2 = int(w_full * 0.85)
+            center = crop[y1:y2, x1:x2]
+            if center.size == 0:
+                center = crop
+
+            hsv = cv2.cvtColor(center, cv2.COLOR_BGR2HSV)
             v = hsv[:, :, 2]
             s = hsv[:, :, 1]
             mean_v = float(np.mean(v))
@@ -326,24 +341,60 @@ class ANPREngine:
                 if plate_found:
                     break  # déjà trouvé sur le crop plaque, on s'arrête
                 try:
-                    ocr_results = self._ocr.readtext(target_img, detail=1)
+                    # paragraph=False → EasyOCR renvoie chaque mot séparément
+                    # (utile pour reconstituer "82 EAH 78" depuis 3 blocs)
+                    ocr_results = self._ocr.readtext(
+                        target_img, detail=1, paragraph=False
+                    )
                 except Exception as e:
                     logger.warning(f"[ANPR] OCR error ({target_name}): {e}")
                     ocr_results = []
 
-                for _, text, conf in ocr_results:
-                    if conf < 0.3:
+                # Seuil de confiance plus bas sur le crop plaque (on sait que c'est une plaque)
+                conf_threshold = 0.2 if target_name == "plate_crop" else 0.3
+
+                # Collecter TOUS les fragments alphanumériques triés gauche→droite
+                # EasyOCR renvoie (bbox_points, text, conf) — bbox_points[0] = coin haut-gauche
+                fragments = []
+                for bbox_pts, text, conf in ocr_results:
+                    if conf < conf_threshold:
                         continue
                     normalized = normalize_plate(text)
-                    if len(normalized) < 4 or len(normalized) > 12:
+                    if len(normalized) < 2:   # fragment minimum 2 chars
                         continue
-                    has_digit = any(c.isdigit() for c in normalized)
-                    has_alpha = any(c.isalpha() for c in normalized)
-                    if not (has_digit and has_alpha):
+                    if not any(c.isdigit() or c.isalpha() for c in normalized):
                         continue
-                    if conf > best_conf:
-                        plate_found = normalized
-                        best_conf = conf
+                    # Position X du coin haut-gauche pour trier gauche→droite
+                    x_pos = bbox_pts[0][0] if bbox_pts else 0
+                    fragments.append((x_pos, normalized, conf))
+
+                if not fragments:
+                    continue
+
+                # Trier par position X (gauche → droite)
+                fragments.sort(key=lambda f: f[0])
+
+                # Cas 1 : un seul fragment ≥ 4 chars avec chiffre+lettre → plaque directe
+                for x_pos, frag, conf in fragments:
+                    if (len(frag) >= 4
+                            and any(c.isdigit() for c in frag)
+                            and any(c.isalpha() for c in frag)):
+                        if conf > best_conf:
+                            plate_found = frag
+                            best_conf = conf
+
+                # Cas 2 : concaténer tous les fragments pour reconstituer la plaque entière
+                # ex: ["82", "EAH", "78"] → "82EAH78"
+                if len(fragments) >= 2:
+                    combined = "".join(f[1] for f in fragments)
+                    if (4 <= len(combined) <= 12
+                            and any(c.isdigit() for c in combined)
+                            and any(c.isalpha() for c in combined)):
+                        avg_conf = sum(f[2] for f in fragments) / len(fragments)
+                        # Préférer la version combinée si elle est plus longue
+                        if plate_found is None or len(combined) > len(plate_found):
+                            plate_found = combined
+                            best_conf = avg_conf
 
             detections.append(
                 {
