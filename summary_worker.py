@@ -30,7 +30,7 @@ import eventlet.tpool
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_INTERVAL = int(os.environ.get("SUMMARY_INTERVAL_SECONDS", "60"))
+DEFAULT_INTERVAL = int(os.environ.get("SUMMARY_INTERVAL_SECONDS", "30"))
 
 
 def start_summary_worker(app, latest_frames, camera_status, blue_flash_last):
