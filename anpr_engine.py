@@ -16,25 +16,12 @@ Usage:
 """
 
 import re
-import socket
-import threading
 import logging
 import eventlet
-import eventlet.patcher
 import eventlet.tpool
 import numpy as np
 
 logger = logging.getLogger(__name__)
-
-# Récupère le vrai socket.getaddrinfo AVANT monkey-patch (ou après, via patcher.original)
-# Utilisé pour bypasser le DNS eventlet qui échoue sur Railway
-try:
-    _REAL_GETADDRINFO = eventlet.patcher.original("socket").getaddrinfo
-except Exception:
-    _REAL_GETADDRINFO = None
-
-# Lock pour le swap DNS (thread-safe — tpool peut avoir plusieurs threads)
-_DNS_FIX_LOCK = threading.Lock()
 
 
 def normalize_plate(plate_str):
@@ -214,45 +201,57 @@ class ANPREngine:
 
     def _call_roboflow(self, api_key, model_id, image_bytes, timeout=6):
         """
-        Appelle l'API Roboflow Serverless via urllib (PAS requests/inference_sdk).
+        Appelle l'API Roboflow Serverless via curl (subprocess).
 
-        - Endpoint : serverless.roboflow.com (plus fiable que detect.roboflow.com)
-        - Méthode  : POST base64 du JPEG brut (même principe que la commande curl)
-        - DNS fix  : swap temporaire socket.getaddrinfo → version OS non monkey-patchée
-        - Pas de dépendance externe : stdlib uniquement (urllib, ssl, base64, json)
+        Pourquoi curl et pas urllib/requests ?
+        eventlet.monkey_patch() remplace socket.getaddrinfo ET socket.create_connection
+        au niveau du module Python. Même dans un thread tpool, les deux sont patchés
+        et échouent sur Railway ([Errno -3] Lookup timed out).
+        curl est un processus OS séparé → complètement indépendant de Python/eventlet.
+
+        Équivalent de :
+          base64 < image.jpg | curl -d @- \
+            "https://serverless.roboflow.com/model/1?api_key=KEY"
 
         Retourne le dict JSON Roboflow ou None en cas d'erreur.
         """
         import base64
         import json
-        import ssl
-        import urllib.request
+        import subprocess
 
         img_b64 = base64.b64encode(image_bytes).decode("ascii")
         url = f"https://serverless.roboflow.com/{model_id}?api_key={api_key}"
 
-        req = urllib.request.Request(
-            url,
-            data=img_b64.encode("ascii"),
-            method="POST",
-            headers={"Content-Type": "text/plain"},
-        )
+        try:
+            result = subprocess.run(
+                [
+                    "curl", "-s",
+                    "-m", str(timeout),
+                    "-X", "POST",
+                    "-H", "Content-Type: text/plain",
+                    "--data", img_b64,
+                    url,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=timeout + 2,
+            )
+        except FileNotFoundError:
+            logger.error("[ANPR] curl not found — install curl in Dockerfile")
+            return None
+        except subprocess.TimeoutExpired:
+            logger.warning("[ANPR] Roboflow curl timeout")
+            return None
 
-        ctx = ssl.create_default_context()  # vérifie le certificat TLS
+        if result.returncode != 0 or not result.stdout:
+            logger.warning(f"[ANPR] Roboflow curl failed (rc={result.returncode}): {result.stderr[:200]}")
+            return None
 
-        # Bypass DNS eventlet : swap socket.getaddrinfo → vrai OS resolver
-        if _REAL_GETADDRINFO is not None:
-            with _DNS_FIX_LOCK:
-                old_gai = socket.getaddrinfo
-                socket.getaddrinfo = _REAL_GETADDRINFO
-                try:
-                    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-                        return json.loads(resp.read())
-                finally:
-                    socket.getaddrinfo = old_gai
-        else:
-            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-                return json.loads(resp.read())
+        try:
+            return json.loads(result.stdout)
+        except json.JSONDecodeError as e:
+            logger.warning(f"[ANPR] Roboflow invalid JSON: {e} — stdout: {result.stdout[:200]}")
+            return None
 
     def detect_plates(self, image_bytes, roboflow_key=None, roboflow_model=None):
         """
