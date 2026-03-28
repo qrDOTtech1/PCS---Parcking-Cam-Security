@@ -1087,6 +1087,13 @@ def dashboard():
     rf_key = rf_key_cfg.key_value if rf_key_cfg else ""
     rf_model = rf_model_cfg.key_value if rf_model_cfg else ""
 
+    recent_alerts = (
+        PlateDetection.query.filter_by(user_id=user_id, is_threat=True)
+        .order_by(PlateDetection.detected_at.desc())
+        .limit(15)
+        .all()
+    )
+
     return render_template(
         "dashboard.html",
         username=session["username"],
@@ -1096,6 +1103,7 @@ def dashboard():
         subscription_mode=subscription_mode,
         rf_key=rf_key,
         rf_model=rf_model,
+        recent_alerts=recent_alerts,
     )
 
 

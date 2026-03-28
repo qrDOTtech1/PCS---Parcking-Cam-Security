@@ -184,6 +184,50 @@
                 </div>
             </div>
             
+            <!-- Alert History Section -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-2">
+                <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+                    <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Historique des Alertes / Alert History
+                    </h2>
+                </div>
+                <div class="p-6">
+                    {% if recent_alerts %}
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead>
+                                <tr class="text-gray-500 border-b border-gray-200">
+                                    <th class="pb-3 font-medium">Date & Heure</th>
+                                    <th class="pb-3 font-medium">Caméra</th>
+                                    <th class="pb-3 font-medium">Plaque</th>
+                                    <th class="pb-3 font-medium">Type</th>
+                                    <th class="pb-3 font-medium">Couleur</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                {% for alert in recent_alerts %}
+                                <tr class="hover:bg-gray-50 transition">
+                                    <td class="py-3 text-gray-600">{{ alert.detected_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                    <td class="py-3 font-medium text-gray-900">{{ alert.camera.name }}</td>
+                                    <td class="py-3 font-mono text-gray-700">{% if alert.plate_normalized and not ':' in alert.plate_normalized %}{{ alert.plate_normalized }}{% else %}-{% endif %}</td>
+                                    <td class="py-3">
+                                        <span class="px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs font-semibold capitalize">{{ alert.vehicle_type }}</span>
+                                    </td>
+                                    <td class="py-3 capitalize text-gray-600">{{ alert.vehicle_color }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-sm text-gray-500 text-center py-4">Aucune alerte récente.</p>
+                    {% endif %}
+                </div>
+            </div>
+
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-2">
                 <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
                     <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
