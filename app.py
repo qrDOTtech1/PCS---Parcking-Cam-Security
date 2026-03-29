@@ -1413,6 +1413,109 @@ def cleanup_gifs():
     return redirect(url_for("dashboard"))
 
 
+@app.route("/dashboard/roboflow/<int:model_id>/fetch_classes", methods=["POST"])
+@require_auth
+def roboflow_fetch_classes(model_id):
+    """Appelle l'API Roboflow pour récupérer les classes du modèle."""
+    model = RoboflowModel.query.filter_by(
+        id=model_id, user_id=session["user_id"]
+    ).first()
+    if not model:
+        return jsonify({"error": "Modèle non trouvé"}), 404
+
+    # Parse endpoint: "project/version" → workspace inféré via l'API
+    endpoint = model.model_endpoint.strip("/")
+    api_key = model.api_key
+
+    # Essayer d'abord l'URL directe du modèle
+    url = f"https://api.roboflow.com/{endpoint}?api_key={api_key}"
+
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["curl", "-s", "-m", "8", "-X", "GET", url],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0 or not result.stdout:
+            return jsonify({"error": "Échec de la requête Roboflow", "detail": result.stderr[:200]}), 502
+
+        import json
+        data = json.loads(result.stdout)
+
+        # Roboflow renvoie les classes dans différents champs selon l'endpoint
+        classes = []
+        if "classes" in data:
+            # Peut être un dict {"class_name": count} ou une liste
+            if isinstance(data["classes"], dict):
+                classes = list(data["classes"].keys())
+            elif isinstance(data["classes"], list):
+                classes = data["classes"]
+        elif "model" in data and "classes" in data["model"]:
+            cls_data = data["model"]["classes"]
+            if isinstance(cls_data, dict):
+                classes = list(cls_data.keys())
+            elif isinstance(cls_data, list):
+                classes = cls_data
+
+        # Fallback: chercher dans les predictions d'un champ "labels"
+        if not classes and "labels" in data:
+            classes = data["labels"] if isinstance(data["labels"], list) else []
+
+        if not classes:
+            # Dernière tentative: chercher n'importe quelle liste de strings
+            for key in ["class_names", "label_names", "categories"]:
+                if key in data and isinstance(data[key], list):
+                    classes = data[key]
+                    break
+
+        return jsonify({"classes": classes, "raw_keys": list(data.keys())})
+
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Timeout Roboflow"}), 504
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/dashboard/roboflow/fetch_classes_preview", methods=["POST"])
+@require_auth
+def roboflow_fetch_classes_preview():
+    """Fetch classes pour un modèle pas encore créé (formulaire d'ajout)."""
+    endpoint = request.form.get("model_endpoint", "").strip().strip("/")
+    api_key = request.form.get("api_key", "").strip()
+    if not endpoint or not api_key:
+        return jsonify({"error": "Endpoint et clé API requis"}), 400
+
+    url = f"https://api.roboflow.com/{endpoint}?api_key={api_key}"
+
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["curl", "-s", "-m", "8", "-X", "GET", url],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0 or not result.stdout:
+            return jsonify({"error": "Échec de la requête"}), 502
+
+        import json
+        data = json.loads(result.stdout)
+        classes = []
+        if "classes" in data:
+            if isinstance(data["classes"], dict):
+                classes = list(data["classes"].keys())
+            elif isinstance(data["classes"], list):
+                classes = data["classes"]
+        elif "model" in data and "classes" in data["model"]:
+            cls_data = data["model"]["classes"]
+            classes = list(cls_data.keys()) if isinstance(cls_data, dict) else cls_data
+        for key in ["labels", "class_names", "label_names", "categories"]:
+            if not classes and key in data and isinstance(data[key], list):
+                classes = data[key]
+                break
+        return jsonify({"classes": classes})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/dashboard/update_ai_config", methods=["POST"])
 @require_auth
 def update_ai_config():

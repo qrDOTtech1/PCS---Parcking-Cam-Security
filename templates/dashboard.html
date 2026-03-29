@@ -329,10 +329,19 @@
                                             <option value="critical" {% if rfm.alert_priority == 'critical' %}selected{% endif %}>Critical</option>
                                         </select>
                                     </div>
-                                    <input type="text" name="alert_classes" id="edit-classes-{{ rfm.id }}"
-                                        value="{{ rfm.get_alert_classes()|join(', ') }}"
-                                        placeholder="Classes (séparées par virgule)"
-                                        class="w-full px-3 py-2 border rounded-lg text-sm {% if rfm.alert_mode != 'alert_on_classes' %}hidden{% endif %}">
+                                    <div class="{% if rfm.alert_mode != 'alert_on_classes' %}hidden{% endif %}" id="edit-classes-wrap-{{ rfm.id }}">
+                                        <div class="flex gap-2">
+                                            <input type="text" name="alert_classes" id="edit-classes-{{ rfm.id }}"
+                                                value="{{ rfm.get_alert_classes()|join(', ') }}"
+                                                placeholder="Classes (séparées par virgule)"
+                                                class="flex-1 px-3 py-2 border rounded-lg text-sm">
+                                            <button type="button" onclick="fetchClassesForModel({{ rfm.id }}, 'edit-classes-{{ rfm.id }}')"
+                                                class="px-3 py-2 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition whitespace-nowrap">
+                                                Récupérer classes
+                                            </button>
+                                        </div>
+                                        <div id="edit-classes-tags-{{ rfm.id }}" class="flex flex-wrap gap-1 mt-2"></div>
+                                    </div>
                                     <button type="submit" class="w-full bg-purple-600 text-white py-2 rounded-lg text-sm font-medium">Sauvegarder</button>
                                 </form>
                             </div>
@@ -359,7 +368,7 @@
                             <div class="grid grid-cols-2 gap-2">
                                 <div>
                                     <label class="block text-xs font-medium text-gray-500 mb-1">Mode d'alerte</label>
-                                    <select name="alert_mode" id="new-rf-alert-mode" onchange="toggleClassesInput(this, 'new-rf-classes')" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                    <select name="alert_mode" id="new-rf-alert-mode" onchange="toggleNewRfClasses(this)" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
                                         <option value="log_only">Log uniquement (enrichit l'historique)</option>
                                         <option value="alert_all">Alerter sur toutes les détections</option>
                                         <option value="alert_on_classes">Alerter sur certaines classes</option>
@@ -374,9 +383,18 @@
                                     </select>
                                 </div>
                             </div>
-                            <input type="text" name="alert_classes" id="new-rf-classes"
-                                placeholder="Classes d'alerte (séparées par virgule, ex: flic, ambulance)"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm hidden">
+                            <div id="new-rf-classes-wrap" class="hidden">
+                                <div class="flex gap-2">
+                                    <input type="text" name="alert_classes" id="new-rf-classes"
+                                        placeholder="Classes d'alerte (séparées par virgule)"
+                                        class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                    <button type="button" onclick="fetchClassesPreview()"
+                                        class="px-3 py-2 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition whitespace-nowrap">
+                                        Récupérer classes
+                                    </button>
+                                </div>
+                                <div id="new-rf-classes-tags" class="flex flex-wrap gap-1 mt-2"></div>
+                            </div>
                             <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg text-sm font-medium transition">
                                 + Ajouter le modèle
                             </button>
@@ -1057,13 +1075,128 @@
         }
 
         function toggleClassesInput(select, inputId) {
+            // Supporte l'ancien format (input direct) et le nouveau (wrapper div)
+            const input = document.getElementById(inputId);
+            const wrap = document.getElementById(inputId.replace('classes-', 'classes-wrap-'));
+            const target = wrap || input;
+            if (!target) return;
+            if (select.value === 'alert_on_classes') {
+                target.classList.remove('hidden');
+            } else {
+                target.classList.add('hidden');
+            }
+        }
+
+        function toggleNewRfClasses(select) {
+            const wrap = document.getElementById('new-rf-classes-wrap');
+            if (!wrap) return;
+            if (select.value === 'alert_on_classes') {
+                wrap.classList.remove('hidden');
+            } else {
+                wrap.classList.add('hidden');
+            }
+        }
+
+        // Récupérer les classes depuis un modèle déjà enregistré
+        function fetchClassesForModel(modelId, inputId) {
+            const btn = event.target;
+            btn.textContent = 'Chargement...';
+            btn.disabled = true;
+            fetch('/dashboard/roboflow/' + modelId + '/fetch_classes', {method: 'POST'})
+                .then(r => r.json())
+                .then(data => {
+                    btn.textContent = 'Récupérer classes';
+                    btn.disabled = false;
+                    if (data.error) {
+                        alert('Erreur: ' + data.error);
+                        return;
+                    }
+                    displayClassTags(data.classes || [], inputId, 'edit-classes-tags-' + modelId);
+                })
+                .catch(e => {
+                    btn.textContent = 'Récupérer classes';
+                    btn.disabled = false;
+                    alert('Erreur réseau: ' + e);
+                });
+        }
+
+        // Récupérer les classes pour le formulaire d'ajout (modèle pas encore créé)
+        function fetchClassesPreview() {
+            const endpoint = document.querySelector('form[action*="roboflow/add"] input[name="model_endpoint"]');
+            const apiKey = document.querySelector('form[action*="roboflow/add"] input[name="api_key"]');
+            if (!endpoint || !apiKey || !endpoint.value || !apiKey.value) {
+                alert('Remplissez d\'abord l\'endpoint et la clé API.');
+                return;
+            }
+            const btn = event.target;
+            btn.textContent = 'Chargement...';
+            btn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('model_endpoint', endpoint.value);
+            formData.append('api_key', apiKey.value);
+
+            fetch('/dashboard/roboflow/fetch_classes_preview', {method: 'POST', body: formData})
+                .then(r => r.json())
+                .then(data => {
+                    btn.textContent = 'Récupérer classes';
+                    btn.disabled = false;
+                    if (data.error) {
+                        alert('Erreur: ' + data.error);
+                        return;
+                    }
+                    displayClassTags(data.classes || [], 'new-rf-classes', 'new-rf-classes-tags');
+                })
+                .catch(e => {
+                    btn.textContent = 'Récupérer classes';
+                    btn.disabled = false;
+                    alert('Erreur réseau: ' + e);
+                });
+        }
+
+        // Afficher les classes sous forme de tags cliquables
+        function displayClassTags(classes, inputId, containerId) {
+            const container = document.getElementById(containerId);
+            const input = document.getElementById(inputId);
+            if (!container || !input) return;
+            container.innerHTML = '';
+            if (classes.length === 0) {
+                container.innerHTML = '<span class="text-xs text-gray-400">Aucune classe trouvée</span>';
+                return;
+            }
+            // Classes déjà sélectionnées
+            const current = input.value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+
+            classes.forEach(cls => {
+                const tag = document.createElement('button');
+                tag.type = 'button';
+                const isSelected = current.includes(cls.toLowerCase());
+                tag.className = 'px-2 py-1 rounded text-xs font-medium transition cursor-pointer ' +
+                    (isSelected
+                        ? 'bg-indigo-600 text-white border border-indigo-600'
+                        : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-indigo-50 hover:border-indigo-300');
+                tag.textContent = cls;
+                tag.onclick = function() {
+                    toggleClassTag(cls, inputId, containerId, this);
+                };
+                container.appendChild(tag);
+            });
+        }
+
+        // Toggle une classe dans l'input
+        function toggleClassTag(cls, inputId, containerId, tagEl) {
             const input = document.getElementById(inputId);
             if (!input) return;
-            if (select.value === 'alert_on_classes') {
-                input.classList.remove('hidden');
+            let current = input.value.split(',').map(s => s.trim()).filter(Boolean);
+            const idx = current.findIndex(c => c.toLowerCase() === cls.toLowerCase());
+            if (idx >= 0) {
+                current.splice(idx, 1);
+                tagEl.className = 'px-2 py-1 rounded text-xs font-medium transition cursor-pointer bg-gray-100 text-gray-700 border border-gray-300 hover:bg-indigo-50 hover:border-indigo-300';
             } else {
-                input.classList.add('hidden');
+                current.push(cls);
+                tagEl.className = 'px-2 py-1 rounded text-xs font-medium transition cursor-pointer bg-indigo-600 text-white border border-indigo-600';
             }
+            input.value = current.join(', ');
         }
 
         function switchNotifPlatform(platform) {
