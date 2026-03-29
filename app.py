@@ -385,10 +385,11 @@ def create_tables():
             except Exception:
                 pass
 
-        # Migration: nouvelles colonnes PlateDetection pour multi-modèle Roboflow
+        # Migration: nouvelles colonnes PlateDetection pour multi-modèle Roboflow + GIF
         for col, defn in [
             ("roboflow_model_name", "VARCHAR(50) DEFAULT ''"),
             ("detected_class", "VARCHAR(50) DEFAULT ''"),
+            ("gif_path", "VARCHAR(200) DEFAULT ''"),
         ]:
             try:
                 conn.execute(
@@ -1362,9 +1363,54 @@ def camera_view(camera_id):
             (now - cam.last_seen).total_seconds() < 600 if cam.last_seen else False
         )
 
-    return render_template(
-        "camera_view.html", camera=camera, cameras=cameras, username=session["username"]
+    recent_detections = (
+        PlateDetection.query.filter_by(camera_id=camera_id)
+        .order_by(PlateDetection.detected_at.desc())
+        .limit(50)
+        .all()
     )
+
+    return render_template(
+        "camera_view.html",
+        camera=camera,
+        cameras=cameras,
+        username=session["username"],
+        recent_detections=recent_detections,
+    )
+
+
+@app.route("/alert_gif/<int:detection_id>")
+@require_auth
+def serve_alert_gif(detection_id):
+    """Sert un GIF d'alerte sauvegardé."""
+    det = PlateDetection.query.filter_by(
+        id=detection_id, user_id=session["user_id"]
+    ).first()
+    if not det or not det.gif_path:
+        return "Not found", 404
+    gif_full = os.path.join(app.root_path, "static", det.gif_path)
+    if not os.path.exists(gif_full):
+        return "Not found", 404
+    return send_file(gif_full, mimetype="image/gif")
+
+
+@app.route("/dashboard/cleanup_gifs", methods=["POST"])
+@require_auth
+def cleanup_gifs():
+    """Supprime les GIFs d'alerte de plus de 7 jours."""
+    gif_dir = os.path.join(app.root_path, "static", "alert_gifs")
+    if not os.path.exists(gif_dir):
+        flash("Aucun GIF à nettoyer.", "success")
+        return redirect(url_for("dashboard"))
+    import glob as glob_mod
+    now = time.time()
+    count = 0
+    for gif_file in glob_mod.glob(os.path.join(gif_dir, "*.gif")):
+        if now - os.path.getmtime(gif_file) > 7 * 86400:
+            os.remove(gif_file)
+            count += 1
+    flash(f"{count} GIF(s) supprimé(s) (> 7 jours).", "success")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/dashboard/update_ai_config", methods=["POST"])

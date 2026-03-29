@@ -524,12 +524,27 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                 )
                                 # Générer un GIF des dernières frames si le buffer est disponible
                                 gif_bytes = None
+                                gif_rel_path = ""
                                 if frame_buffers:
                                     try:
                                         from alert_clip import create_alert_gif
                                         gif_bytes = eventlet.tpool.execute(
                                             create_alert_gif, frame_buffers, cam_id, 20
                                         )
+                                        # Sauvegarder le GIF sur disque
+                                        if gif_bytes:
+                                            gif_dir = os.path.join(
+                                                os.path.dirname(__file__), "static", "alert_gifs"
+                                            )
+                                            os.makedirs(gif_dir, exist_ok=True)
+                                            gif_filename = f"alert_{det.id}_{cam_id}_{int(time.time())}.gif"
+                                            gif_full = os.path.join(gif_dir, gif_filename)
+                                            with open(gif_full, "wb") as gf:
+                                                gf.write(gif_bytes)
+                                            gif_rel_path = f"alert_gifs/{gif_filename}"
+                                            det.gif_path = gif_rel_path
+                                            db.session.commit()
+                                            logger.info(f"[ANPR] GIF saved: {gif_rel_path}")
                                     except Exception as e:
                                         logger.warning(f"[ANPR] GIF creation error: {e}")
 

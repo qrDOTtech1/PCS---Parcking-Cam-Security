@@ -124,6 +124,7 @@ class PlateDetection(db.Model):
     is_threat = db.Column(db.Boolean, default=False)
     roboflow_model_name = db.Column(db.String(50), default="")
     detected_class = db.Column(db.String(50), default="")
+    gif_path = db.Column(db.String(200), default="")
 
     camera = db.relationship("Camera", backref="detections")
 

@@ -349,9 +349,9 @@
                         <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Ajouter un modèle</p>
                         <form method="POST" action="{{ url_for('roboflow_add') }}" class="space-y-3">
                             <div class="grid grid-cols-2 gap-2">
-                                <input type="text" name="name" placeholder="Nom (ex: Police Detector)" required
+                                <input type="text" name="name" placeholder="Nom du modèle" required
                                     class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                                <input type="text" name="model_endpoint" placeholder="Endpoint (ex: police-detector/1)" required
+                                <input type="text" name="model_endpoint" placeholder="Endpoint (modele/version)" required
                                     class="px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono">
                             </div>
                             <input type="text" name="api_key" placeholder="Clé API Roboflow" required
@@ -421,6 +421,12 @@
                                 🔤 Avec plaque
                             </button>
                         </div>
+                        <form method="POST" action="{{ url_for('cleanup_gifs') }}" class="inline"
+                            onsubmit="return confirm('Supprimer les GIFs de plus de 7 jours ?');">
+                            <button type="submit" class="px-3 py-1.5 rounded-md text-xs font-medium text-gray-400 hover:text-red-600 hover:bg-red-50 transition">
+                                Nettoyer GIFs
+                            </button>
+                        </form>
                     </div>
                 </div>
                 <div class="p-6">
@@ -437,6 +443,7 @@
                                     <th class="pb-3 font-medium">Modèle</th>
                                     <th class="pb-3 font-medium">Classe</th>
                                     <th class="pb-3 font-medium">Statut</th>
+                                    <th class="pb-3 font-medium">GIF</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100" id="history-tbody">
@@ -503,6 +510,19 @@
                                         </span>
                                         {% else %}
                                         <span class="text-gray-300 text-xs">✓ OK</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="py-2.5">
+                                        {% if det.gif_path %}
+                                        <a href="{{ url_for('serve_alert_gif', detection_id=det.id) }}" target="_blank"
+                                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                            </svg>
+                                            GIF
+                                        </a>
+                                        {% else %}
+                                        <span class="text-gray-200 text-xs">—</span>
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -713,40 +733,6 @@
                         </div>
                     </div>
 
-                    {% if subscription_mode in ['emergency','enterprise'] %}
-                    <!-- Gyrophare detection per camera -->
-                    <div class="mt-4 border-t border-gray-100 pt-4">
-                        <p class="text-xs font-bold text-red-700 uppercase tracking-wide mb-3">
-                            🔵 Détection Gyrophare par Caméra
-                        </p>
-                        {% if cameras %}
-                        <div class="space-y-2">
-                        {% for cam in cameras %}
-                        <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
-                            <div class="flex items-center gap-2">
-                                <span class="w-2 h-2 rounded-full {% if cam.is_online %}bg-green-400{% else %}bg-gray-300{% endif %}"></span>
-                                <span class="text-sm font-medium text-gray-700">{{ cam.name }}</span>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <a href="{{ url_for('camera_management', camera_id=cam.id) }}" class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded">Stats</a>
-                                <button type="button"
-                                    id="flash_btn_{{ cam.id }}"
-                                    onclick="toggleFlash({{ cam.id }}, this)"
-                                    class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold transition
-                                        {% if cam.flash_detect_enabled %}bg-blue-100 text-blue-700 border border-blue-300{% else %}bg-gray-100 text-gray-500 border border-gray-300{% endif %}">
-                                    <span class="{% if cam.flash_detect_enabled %}animate-pulse{% endif %}">🔵</span>
-                                    <span id="flash_label_{{ cam.id }}">{% if cam.flash_detect_enabled %}Gyrophare ON{% else %}Gyrophare OFF{% endif %}</span>
-                                </button>
-                            </div>
-                        </div>
-                        {% endfor %}
-
-                        </div>
-                        {% else %}
-                        <p class="text-xs text-gray-400">Aucune caméra enregistrée.</p>
-                        {% endif %}
-                    </div>
-                    {% endif %}
                 </div>
             </div>
         </div>
@@ -900,15 +886,6 @@
             }
         });
 
-        socket.on('emergency_flash', function(data) {
-            showFlashOverlay('#1d4ed8', '🚨 GYROPHARE BLEU — ' + data.camera_name);
-            const msg = '🚨 VÉHICULE D\'URGENCE DÉTECTÉ\n\nGyrophare bleu en approche\nCaméra: ' +
-                data.camera_name + '\n\nVoir le flux ?';
-            if (confirm(msg)) {
-                window.location.href = '/camera/' + data.camera_id;
-            }
-        });
-
         // Mise à jour en temps réel de l'historique des passages
         socket.on('new_detection', function(d) {
             const tbody = document.getElementById('history-tbody');
@@ -951,7 +928,8 @@
                 '<td class="py-2.5 text-xs text-gray-600 capitalize"><span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full inline-block border border-gray-200" style="background-color:' + dotColor + '"></span>' + (d.vehicle_color || '—') + '</span></td>' +
                 '<td class="py-2.5 text-xs text-gray-600">' + modelHtml + '</td>' +
                 '<td class="py-2.5 text-xs text-gray-600">' + classHtml + '</td>' +
-                '<td class="py-2.5">' + statusHtml + '</td>';
+                '<td class="py-2.5">' + statusHtml + '</td>' +
+                '<td class="py-2.5"><span class="text-gray-200 text-xs">—</span></td>';
 
             // Flash vert pour la nouvelle ligne
             tr.style.animation = 'pulse 1s';
@@ -1049,26 +1027,6 @@
             // Highlight active preset
             document.querySelectorAll('#quick-presets button').forEach(b => b.style.opacity = '0.5');
             event.target.style.opacity = '1';
-        }
-
-        // ── Gyrophare toggle ──
-        function toggleFlash(cameraId, btn) {
-            fetch('/dashboard/toggle_flash/' + cameraId, {method: 'POST'})
-                .then(r => r.json())
-                .then(data => {
-                    const label = document.getElementById('flash_label_' + cameraId);
-                    if (data.enabled) {
-                        btn.className = btn.className.replace('bg-gray-100 text-gray-500 border-gray-300',
-                            'bg-blue-100 text-blue-700 border-blue-300');
-                        btn.querySelector('span:first-child').classList.add('animate-pulse');
-                        if (label) label.textContent = 'Gyrophare ON';
-                    } else {
-                        btn.className = btn.className.replace('bg-blue-100 text-blue-700 border-blue-300',
-                            'bg-gray-100 text-gray-500 border-gray-300');
-                        btn.querySelector('span:first-child').classList.remove('animate-pulse');
-                        if (label) label.textContent = 'Gyrophare OFF';
-                    }
-                });
         }
 
         function filterHistory(mode) {
