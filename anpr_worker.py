@@ -251,19 +251,19 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                     det["rf_class"] = rd.get("rf_class", "")
                                     det["rf_model_name"] = rfm.name
                                     det["rf_confidence"] = rd.get("confidence", 0)
-                                    if det["vehicle_type"] == "unknown":
-                                        det["vehicle_type"] = rd.get("vehicle_type", det["vehicle_type"])
+                                    # Garder vehicle_type de YOLO (car, truck…), pas la classe RF
                                     if det["vehicle_color"] == "unknown":
                                         det["vehicle_color"] = rd.get("vehicle_color", det["vehicle_color"])
                                     merged = True
                                     break
                             if not merged:
                                 # Détection Roboflow sans correspondance YOLO
+                                # vehicle_type reste "unknown" — la vraie info est dans rf_class
                                 results.append({
                                     "plate": None,
                                     "confidence": rd.get("confidence", 0),
                                     "bbox": rf_bbox,
-                                    "vehicle_type": rd.get("vehicle_type", "unknown"),
+                                    "vehicle_type": "unknown",
                                     "vehicle_color": rd.get("vehicle_color", "unknown"),
                                     "rf_class": rd.get("rf_class", ""),
                                     "rf_model_name": rfm.name,
@@ -508,13 +508,12 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                     "normal": "🟡",
                                 }.get(priority, "🟡")
 
-                                plate_line = (
-                                    f"Plaque: {plate}"
-                                    if plate
-                                    else f"Type: {veh_type} | Couleur: {veh_color}"
-                                )
-                                if rf_class:
-                                    plate_line += f"\nClasse IA: {rf_class}"
+                                if plate:
+                                    plate_line = f"Plaque: {plate}"
+                                elif rf_class:
+                                    plate_line = f"Classe IA: {rf_class} | Couleur: {veh_color}"
+                                else:
+                                    plate_line = f"Type: {veh_type} | Couleur: {veh_color}"
                                 alert_msg = (
                                     f"{priority_icon} ALERTE PCS {priority_icon}\n"
                                     f"{label}!\n"

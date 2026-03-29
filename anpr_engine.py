@@ -335,7 +335,7 @@ class ANPREngine:
                     "rf_class": rf_class,
                     "confidence": round(rf_conf, 3),
                     "bbox": [x1, y1, x2, y2],
-                    "vehicle_type": rf_class.lower(),
+                    "vehicle_type": "unknown",
                     "vehicle_color": color,
                 })
 
