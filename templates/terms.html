@@ -1,12 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>PCS — Terms of Use / Conditions d'utilisation</title>
+    <title>PCS — Conditions Generales d'Utilisation</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style> body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; } </style>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .prose h2 { scroll-margin-top: 80px; }
+    </style>
 </head>
 <body class="min-h-screen py-12 px-4">
 
@@ -17,170 +20,292 @@
             <a href="/login">
                 <img src="/static/img/PCS_wordmark_logo.svg" alt="PCS" class="h-12 w-auto mx-auto mb-4">
             </a>
-            <h1 class="text-2xl font-bold text-gray-900">Terms of Use &nbsp;/&nbsp; Conditions d'utilisation</h1>
-            <p class="text-gray-500 text-sm mt-2">Last updated / Dernière mise à jour : 2024</p>
+            <h1 class="text-2xl font-bold text-gray-900">Conditions Generales d'Utilisation</h1>
+            <p class="text-gray-500 text-sm mt-2">Derniere mise a jour : 29 mars 2026 — Version 2.0</p>
+        </div>
+
+        <!-- Table des matieres -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+            <h3 class="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Sommaire</h3>
+            <nav class="grid grid-cols-1 sm:grid-cols-2 gap-1 text-sm">
+                <a href="#art1" class="text-blue-600 hover:underline py-0.5">Art. 1 — Objet du Service</a>
+                <a href="#art2" class="text-blue-600 hover:underline py-0.5">Art. 2 — Responsabilite de l'Utilisateur</a>
+                <a href="#art3" class="text-blue-600 hover:underline py-0.5">Art. 3 — Utilisations interdites</a>
+                <a href="#art4" class="text-blue-600 hover:underline py-0.5">Art. 4 — Exclusion de responsabilite</a>
+                <a href="#art5" class="text-blue-600 hover:underline py-0.5">Art. 5 — Indemnisation</a>
+                <a href="#art6" class="text-blue-600 hover:underline py-0.5">Art. 6 — Absence de garantie</a>
+                <a href="#art7" class="text-blue-600 hover:underline py-0.5">Art. 7 — Donnees et confidentialite</a>
+                <a href="#art7b" class="text-blue-600 hover:underline py-0.5">Art. 7bis — RGPD et droits des personnes</a>
+                <a href="#art8" class="text-blue-600 hover:underline py-0.5">Art. 8 — Propriete intellectuelle</a>
+                <a href="#art9" class="text-blue-600 hover:underline py-0.5">Art. 9 — Force majeure</a>
+                <a href="#art10" class="text-blue-600 hover:underline py-0.5">Art. 10 — Resiliation</a>
+                <a href="#art11" class="text-blue-600 hover:underline py-0.5">Art. 11 — Modification des CGU</a>
+                <a href="#art12" class="text-blue-600 hover:underline py-0.5">Art. 12 — Droit applicable</a>
+                <a href="#art13" class="text-blue-600 hover:underline py-0.5">Art. 13 — Divisibilite</a>
+                <a href="#art14" class="text-blue-600 hover:underline py-0.5">Art. 14 — Integralite de l'accord</a>
+                <a href="#art15" class="text-blue-600 hover:underline py-0.5">Art. 15 — Acceptation</a>
+            </nav>
         </div>
 
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-8 prose prose-sm max-w-none text-gray-700 space-y-8">
 
-            <!-- Language tabs -->
-            <div class="flex border-b border-gray-100">
-                <button onclick="showLang('en')" id="tab-en"
-                    class="flex-1 py-3 text-sm font-semibold text-blue-600 border-b-2 border-blue-600 transition">
-                    English
-                </button>
-                <button onclick="showLang('fr')" id="tab-fr"
-                    class="flex-1 py-3 text-sm font-semibold text-gray-400 hover:text-gray-600 border-b-2 border-transparent transition">
-                    Français
-                </button>
+                <!-- PREAMBULE -->
+                <section class="bg-gray-50 border border-gray-200 rounded-lg p-5">
+                    <h2 class="text-lg font-bold text-gray-900 mb-3">PREAMBULE</h2>
+                    <p>Les presentes Conditions Generales d'Utilisation (ci-apres "CGU") constituent un contrat juridiquement contraignant entre vous (ci-apres "l'Utilisateur", "vous") et les createurs, developpeurs, contributeurs, operateurs et affilies de ParkingCamSecurity (ci-apres collectivement "PCS", "nous", "notre", "les Developpeurs", "l'Editeur").</p>
+                    <div class="mt-4 bg-red-50 border border-red-200 rounded-lg p-4 text-sm">
+                        <p class="font-bold text-red-800 uppercase mb-2">EN ACCEDANT, TELECHARGEANT, INSTALLANT OU UTILISANT PARKINGCAMSECURITY SOUS QUELQUE FORME QUE CE SOIT, VOUS DECLAREZ EXPRESSEMENT :</p>
+                        <ul class="list-disc list-inside space-y-1 text-red-700">
+                            <li>Etre majeur et juridiquement capable de contracter dans votre juridiction ;</li>
+                            <li>Avoir lu, compris et accepte l'integralite des presentes CGU sans reserve ;</li>
+                            <li>Assumer l'entiere responsabilite juridique, civile et penale de votre utilisation du Service.</li>
+                        </ul>
+                        <p class="mt-3 font-bold text-red-800">Si vous n'acceptez pas l'integralite de ces conditions, vous devez immediatement cesser toute utilisation du Service et supprimer toute copie du logiciel en votre possession.</p>
+                    </div>
+                </section>
+
+                <!-- ARTICLE 1 -->
+                <section id="art1">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 1 — OBJET DU SERVICE</h2>
+                    <p><strong>1.1.</strong> ParkingCamSecurity est un <strong>outil technique neutre</strong> de gestion de flux video, concu pour la visualisation en direct de cameras IP, modules ESP32-CAM, smartphones ou webcams via un tableau de bord centralise.</p>
+                    <p><strong>1.2.</strong> Le Service integre des fonctionnalites de reconnaissance optique de caracteres (OCR) appliquee aux plaques d'immatriculation, a des fins exclusivement techniques.</p>
+                    <p><strong>1.3. PCS est un outil logiciel mis a disposition "tel quel".</strong> Il ne constitue en aucun cas un service de securite, de surveillance professionnelle, de gardiennage, ni un systeme de detection d'intrusion agree. PCS n'a pas vocation a se substituer a un dispositif de securite professionnel ni a un service de forces de l'ordre.</p>
+                    <p><strong>1.4.</strong> PCS est destine exclusivement a une utilisation sur des proprietes privees dont l'Utilisateur est le proprietaire, le locataire legitime ou le gestionnaire dument autorise.</p>
+                </section>
+
+                <!-- ARTICLE 2 -->
+                <section id="art2">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 2 — RESPONSABILITE EXCLUSIVE DE L'UTILISATEUR</h2>
+                    <p><strong>2.1. L'Utilisateur est seul et unique responsable</strong> de l'integralite de son utilisation de PCS, y compris mais sans limitation :</p>
+                    <ul class="list-[lower-alpha] list-inside mt-2 space-y-2 text-sm">
+                        <li>La conformite de l'installation et de l'exploitation de tout dispositif de captation avec l'ensemble des lois, reglementations, directives et normes applicables dans sa juridiction, notamment le <strong>Reglement General sur la Protection des Donnees (RGPD — Reglement UE 2016/679)</strong>, la loi Informatique et Libertes, le Code de la securite interieure, le Code penal et toute legislation locale, nationale ou internationale applicable ;</li>
+                        <li>L'obtention prealable de toutes les autorisations, declarations et agrements necessaires aupres des autorites competentes (CNIL, prefecture, etc.) ;</li>
+                        <li>L'information claire et prealable de toute personne susceptible d'etre filmee, conformement aux obligations legales (panneaux d'information, mentions legales, registre des traitements) ;</li>
+                        <li>La definition du perimetre de captation, qui doit etre strictement limite aux zones autorisees par la loi ;</li>
+                        <li>La conservation, la securisation, le traitement et la suppression des donnees collectees conformement a la legislation applicable ;</li>
+                        <li>La realisation d'une <strong>analyse d'impact relative a la protection des donnees (AIPD/DPIA)</strong> lorsque celle-ci est requise par la reglementation.</li>
+                    </ul>
+                    <p class="mt-3"><strong>2.2. L'Utilisateur reconnait et accepte qu'il est le responsable de traitement</strong> au sens du RGPD pour toute donnee personnelle collectee, traitee ou stockee via PCS. Les Developpeurs n'agissent ni en qualite de responsable de traitement, ni en qualite de sous-traitant au sens du RGPD.</p>
+                    <p><strong>2.3.</strong> L'Utilisateur s'engage a ne pas utiliser PCS d'une maniere qui porterait atteinte aux droits de tiers, y compris mais sans limitation le droit a la vie privee, le droit a l'image et le droit a la protection des donnees personnelles.</p>
+                </section>
+
+                <!-- ARTICLE 3 -->
+                <section id="art3">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 3 — UTILISATIONS INTERDITES</h2>
+                    <p><strong>3.1.</strong> L'Utilisateur s'interdit formellement d'utiliser PCS pour :</p>
+                    <ul class="list-[lower-alpha] list-inside mt-2 space-y-1.5 text-sm">
+                        <li>La surveillance non autorisee de personnes, de biens ou de proprietes dont il n'est pas le proprietaire ou le gestionnaire legitime ;</li>
+                        <li>La captation d'images sur la voie publique ou dans des espaces accessibles au public sans autorisation prefectorale prealable ;</li>
+                        <li>Le harcelement, la filature, l'intimidation ou toute forme de surveillance abusive ;</li>
+                        <li>La collecte de donnees personnelles sans base legale appropriee au sens de l'article 6 du RGPD ;</li>
+                        <li>Le profilage, le suivi ou la tracabilite de personnes physiques sans leur consentement explicite ou sans base legale ;</li>
+                        <li>La discrimination, le controle social ou toute forme de traitement illicite fonde sur les donnees collectees ;</li>
+                        <li>Toute activite criminelle, delictuelle ou contraire a l'ordre public ;</li>
+                        <li>La revente, la transmission ou la diffusion a des tiers de donnees, flux video ou images collectees via PCS sans base legale ;</li>
+                        <li>L'utilisation dans un pays ou une juridiction ou ce type de service est interdit ou restreint, sans respecter les conditions imposees par ladite juridiction.</li>
+                    </ul>
+                    <p class="mt-3"><strong>3.2.</strong> Toute violation du present article constitue une faute grave de l'Utilisateur et un motif de resiliation immediate de son acces au Service, sans prejudice de toute action en justice.</p>
+                </section>
+
+                <!-- ARTICLE 4 -->
+                <section id="art4">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 4 — EXCLUSION TOTALE DE RESPONSABILITE DES DEVELOPPEURS</h2>
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <p class="font-bold text-red-800 mb-2">4.1. CLAUSE ESSENTIELLE — EXONERATION COMPLETE.</p>
+                        <p class="text-sm">Les Developpeurs, createurs, contributeurs, operateurs, hebergeurs, partenaires et affilies de PCS declinent <strong>expressement, irrevocablement et sans reserve</strong> toute responsabilite, quelle qu'en soit la nature (contractuelle, delictuelle, quasi-delictuelle, legale ou autre), pour :</p>
+                        <ul class="list-[lower-alpha] list-inside mt-2 space-y-1.5 text-sm text-red-700">
+                            <li><strong>Toute utilisation du Service par l'Utilisateur</strong>, quelle qu'elle soit, qu'elle soit licite, illicite, conforme ou non conforme aux presentes CGU, intentionnelle ou non intentionnelle ;</li>
+                            <li><strong>Toute consequence directe, indirecte, incidente, speciale, punitive, exemplaire ou consecutive</strong> resultant de l'utilisation ou de l'impossibilite d'utiliser le Service, y compris mais sans limitation : les pertes de donnees, les pertes financieres, les prejudices moraux, les atteintes a la vie privee, les atteintes a la reputation, les manques a gagner, les interruptions d'activite ;</li>
+                            <li><strong>Toute reclamation, demande, amende, sanction, condamnation, procedure judiciaire, administrative ou arbitrale</strong> dirigee contre les Developpeurs et resultant directement ou indirectement de l'utilisation du Service par l'Utilisateur ;</li>
+                            <li><strong>Tout dommage cause a des tiers</strong> du fait de l'utilisation du Service par l'Utilisateur ;</li>
+                            <li><strong>L'exactitude, la fiabilite, l'exhaustivite ou la legalite</strong> des donnees, images, flux video ou resultats de reconnaissance de plaques collectes, traites ou affiches via PCS ;</li>
+                            <li><strong>Toute defaillance technique</strong>, interruption de service, perte de donnees, faille de securite, intrusion, piratage ou dysfonctionnement du Service, des serveurs, des reseaux ou des equipements de l'Utilisateur ;</li>
+                            <li><strong>Toute incompatibilite</strong> entre le Service et les obligations legales, reglementaires ou contractuelles de l'Utilisateur dans sa juridiction.</li>
+                        </ul>
+                    </div>
+                    <p class="mt-3"><strong>4.2.</strong> L'Utilisateur reconnait expressement que les Developpeurs fournissent un outil technique neutre et n'exercent aucun controle sur l'utilisation qui en est faite.</p>
+                    <p><strong>4.3.</strong> En aucun cas, la responsabilite totale et cumulee des Developpeurs, si elle devait etre retenue malgre les exclusions ci-dessus, ne pourra exceder la somme de <strong>UN (1) EURO</strong>, quel que soit le fondement juridique invoque.</p>
+                    <p><strong>4.4.</strong> Les limitations et exclusions de responsabilite prevues au present article s'appliquent dans toute la mesure permise par le droit applicable et survivent a la resiliation ou a l'expiration des presentes CGU.</p>
+                </section>
+
+                <!-- ARTICLE 5 -->
+                <section id="art5">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 5 — CLAUSE D'INDEMNISATION</h2>
+                    <p><strong>5.1.</strong> L'Utilisateur s'engage irrevocablement a indemniser, defendre et garantir les Developpeurs, leurs dirigeants, employes, agents, partenaires, contributeurs et affilies contre toute reclamation, demande, action, procedure, perte, responsabilite, dommage, cout et frais (y compris les honoraires raisonnables d'avocats et les frais de justice) resultant directement ou indirectement de :</p>
+                    <ul class="list-[lower-alpha] list-inside mt-2 space-y-1 text-sm">
+                        <li>L'utilisation du Service par l'Utilisateur ou par toute personne utilisant le Service via le compte ou les equipements de l'Utilisateur ;</li>
+                        <li>Toute violation des presentes CGU par l'Utilisateur ;</li>
+                        <li>Toute violation par l'Utilisateur d'une loi, d'un reglement ou des droits d'un tiers ;</li>
+                        <li>Toute reclamation d'un tiers liee aux donnees collectees, traitees ou stockees via le Service par l'Utilisateur ;</li>
+                        <li>Toute sanction administrative ou judiciaire imposee en raison de l'utilisation du Service par l'Utilisateur.</li>
+                    </ul>
+                    <p class="mt-3"><strong>5.2.</strong> Cette obligation d'indemnisation <strong>survit a la resiliation</strong> des presentes CGU et a la cessation d'utilisation du Service, sans limitation de duree autre que celle imposee par les delais de prescription applicables.</p>
+                </section>
+
+                <!-- ARTICLE 6 -->
+                <section id="art6">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 6 — ABSENCE DE GARANTIE</h2>
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm">
+                        <p class="font-bold text-yellow-800 uppercase">6.1. LE SERVICE EST FOURNI "EN L'ETAT" ("AS IS") ET "SELON DISPONIBILITE" ("AS AVAILABLE"), SANS GARANTIE D'AUCUNE SORTE, EXPRESSE OU IMPLICITE.</p>
+                    </div>
+                    <p class="mt-3"><strong>6.2.</strong> Les Developpeurs excluent expressement toute garantie, y compris mais sans limitation, les garanties implicites de qualite marchande, d'adequation a un usage particulier, de non-contrefacon, de fiabilite, de disponibilite, de precision, de securite et de continuite du Service.</p>
+                    <p><strong>6.3.</strong> Les Developpeurs ne garantissent pas que :</p>
+                    <ul class="list-[lower-alpha] list-inside mt-2 space-y-1 text-sm">
+                        <li>Le Service fonctionnera de maniere ininterrompue, securisee ou exempte d'erreurs ;</li>
+                        <li>Les resultats obtenus via le Service (notamment la reconnaissance de plaques) seront exacts, fiables ou complets ;</li>
+                        <li>Le Service sera compatible avec les equipements, logiciels ou reseaux de l'Utilisateur ;</li>
+                        <li>Les defauts eventuels seront corriges dans un delai determine ou de quelque maniere que ce soit.</li>
+                    </ul>
+                </section>
+
+                <!-- ARTICLE 7 -->
+                <section id="art7">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 7 — DONNEES ET CONFIDENTIALITE</h2>
+                    <p><strong>7.1.</strong> Les flux video et images transitant par les serveurs de PCS sont traites techniquement dans le seul but de fournir le Service. Les Developpeurs ne procedent a aucune exploitation commerciale de ces donnees et ne les partagent pas avec des tiers, sauf obligation legale.</p>
+                    <p><strong>7.2. L'Utilisateur est et demeure le seul responsable de traitement</strong> pour toute donnee personnelle captee via le Service. Il lui incombe de mettre en oeuvre toutes les mesures techniques et organisationnelles necessaires pour assurer la conformite de ses traitements au RGPD et a toute autre legislation applicable.</p>
+                    <p><strong>7.3.</strong> Les Developpeurs se reservent le droit de supprimer, sans preavis ni indemnite, tout contenu ou donnee heberge sur leurs serveurs, en cas de violation des presentes CGU ou sur demande d'une autorite competente.</p>
+                    <p><strong>7.4.</strong> L'Utilisateur reconnait que la transmission de donnees via Internet comporte des risques inherents et que les Developpeurs ne peuvent garantir la securite absolue des donnees transmises.</p>
+                </section>
+
+                <!-- ARTICLE 7bis — RGPD -->
+                <section id="art7b" class="bg-blue-50 border border-blue-200 rounded-lg p-5">
+                    <h2 class="text-lg font-bold text-gray-900 mb-3">ARTICLE 7bis — RGPD ET DROITS DES PERSONNES CONCERNEES</h2>
+                    <p class="text-xs text-blue-600 font-semibold uppercase tracking-wide mb-3">Dispositions specifiques au Reglement (UE) 2016/679</p>
+
+                    <h3 class="font-bold text-gray-800 mt-4 mb-1">7bis.1. Traitement des donnees par PCS</h3>
+                    <p>Dans le cadre de la fourniture du Service, PCS traite les donnees suivantes pour son propre fonctionnement :</p>
+                    <ul class="list-disc list-inside mt-1 space-y-1 text-sm">
+                        <li><strong>Donnees de compte :</strong> identifiant, mot de passe (hache), date de creation — base legale : execution du contrat (article 6.1.b RGPD) ;</li>
+                        <li><strong>Donnees techniques :</strong> adresses IP de connexion, logs serveur — base legale : interet legitime (article 6.1.f RGPD, securite du Service) ;</li>
+                        <li><strong>Flux video et images :</strong> transmis par les cameras de l'Utilisateur, traites en memoire vive pour l'affichage temps reel et la reconnaissance OCR — base legale : execution du contrat ;</li>
+                        <li><strong>Donnees de detection :</strong> plaques d'immatriculation lues, type/couleur de vehicule, horodatage, resultats des modeles IA — base legale : execution du contrat ;</li>
+                        <li><strong>GIFs d'alerte :</strong> clips animes generes lors de la detection de menaces, conserves sur le serveur — base legale : execution du contrat.</li>
+                    </ul>
+
+                    <h3 class="font-bold text-gray-800 mt-4 mb-1">7bis.2. Durees de conservation</h3>
+                    <ul class="list-disc list-inside mt-1 space-y-1 text-sm">
+                        <li><strong>Flux video en direct :</strong> traites en memoire vive uniquement, non stockes de maniere persistante sur les serveurs PCS ;</li>
+                        <li><strong>Historique de detections :</strong> conserve pendant la duree du compte de l'Utilisateur. L'Utilisateur peut demander la suppression a tout moment ;</li>
+                        <li><strong>GIFs d'alerte :</strong> nettoyage automatique apres 7 jours. L'Utilisateur peut declencher un nettoyage anticipe depuis le tableau de bord ;</li>
+                        <li><strong>Donnees de compte :</strong> conservees jusqu'a la suppression du compte ;</li>
+                        <li><strong>Logs serveur :</strong> conserves 90 jours maximum a des fins de securite et de diagnostic.</li>
+                    </ul>
+
+                    <h3 class="font-bold text-gray-800 mt-4 mb-1">7bis.3. Droits des personnes concernees</h3>
+                    <p>Conformement aux articles 15 a 22 du RGPD, toute personne dont les donnees sont traitees par PCS (Utilisateur ou personne filmee) dispose des droits suivants :</p>
+                    <ul class="list-disc list-inside mt-1 space-y-1 text-sm">
+                        <li><strong>Droit d'acces</strong> (article 15) : obtenir la confirmation que des donnees vous concernant sont traitees et en recevoir une copie ;</li>
+                        <li><strong>Droit de rectification</strong> (article 16) : faire corriger des donnees inexactes ou incompletes ;</li>
+                        <li><strong>Droit a l'effacement</strong> (article 17, "droit a l'oubli") : demander la suppression de vos donnees, sous reserve des obligations legales de conservation ;</li>
+                        <li><strong>Droit a la limitation du traitement</strong> (article 18) : demander la suspension du traitement dans certains cas ;</li>
+                        <li><strong>Droit a la portabilite</strong> (article 20) : recevoir vos donnees dans un format structure, couramment utilise et lisible par machine ;</li>
+                        <li><strong>Droit d'opposition</strong> (article 21) : s'opposer au traitement de vos donnees pour des motifs tenant a votre situation particuliere ;</li>
+                        <li><strong>Droit de ne pas faire l'objet d'une decision automatisee</strong> (article 22) : ne pas etre soumis a une decision fondee exclusivement sur un traitement automatise produisant des effets juridiques.</li>
+                    </ul>
+                    <p class="mt-2 text-sm">Pour exercer ces droits, adressez votre demande a : <a href="mailto:contact@parkingcamsecurity.com" class="text-blue-600 hover:underline font-medium">contact@parkingcamsecurity.com</a>. Nous repondrons dans un delai de 30 jours conformement au RGPD.</p>
+                    <p class="text-sm">Vous disposez egalement du droit d'introduire une reclamation aupres de la <strong>CNIL</strong> (Commission Nationale de l'Informatique et des Libertes) ou de toute autorite de controle competente dans votre Etat membre.</p>
+
+                    <h3 class="font-bold text-gray-800 mt-4 mb-1">7bis.4. Sous-traitants et hebergement</h3>
+                    <p class="text-sm">Le Service est heberge sur l'infrastructure <strong>Railway</strong> (Railway Corp., Etats-Unis). Les donnees transitent par des serveurs pouvant etre situes en dehors de l'Union Europeenne. Le transfert est encadre par les clauses contractuelles types (CCT) adoptees par la Commission Europeenne conformement a l'article 46.2.c du RGPD.</p>
+                    <p class="text-sm mt-1">Aucun autre sous-traitant n'a acces aux donnees des Utilisateurs, a l'exception des fournisseurs de services tiers expressement configures par l'Utilisateur (modeles Roboflow, notifications Telegram/Signal).</p>
+
+                    <h3 class="font-bold text-gray-800 mt-4 mb-1">7bis.5. Transferts internationaux de donnees</h3>
+                    <p class="text-sm">L'Utilisateur reconnait et accepte que ses donnees puissent etre transferees et traitees en dehors de l'Espace Economique Europeen (EEE), notamment aux Etats-Unis, dans le cadre de l'hebergement du Service. Ces transferts sont encadres par des garanties appropriees au sens du Chapitre V du RGPD (articles 44 a 49).</p>
+                    <p class="text-sm mt-1">Lorsque l'Utilisateur configure des services tiers (Roboflow, Telegram, CallMeBot/Signal), il reconnait que ces transferts relevent de sa propre responsabilite en tant que responsable de traitement.</p>
+
+                    <h3 class="font-bold text-gray-800 mt-4 mb-1">7bis.6. Notification de violation de donnees</h3>
+                    <p class="text-sm">En cas de violation de donnees a caractere personnel au sens de l'article 33 du RGPD, les Developpeurs s'engagent a notifier l'Utilisateur dans les meilleurs delais et, lorsque cela est possible, dans un delai de 72 heures apres en avoir pris connaissance, afin que l'Utilisateur puisse remplir ses propres obligations de notification aupres de l'autorite de controle et des personnes concernees (articles 33 et 34 du RGPD).</p>
+
+                    <h3 class="font-bold text-gray-800 mt-4 mb-1">7bis.7. Cookies et traceurs</h3>
+                    <p class="text-sm">PCS utilise exclusivement un <strong>cookie de session technique</strong> strictement necessaire au fonctionnement du Service (maintien de la connexion utilisateur). Ce cookie est exempt de consentement au titre de l'article 82 de la loi Informatique et Libertes. PCS n'utilise aucun cookie publicitaire, analytique ou de suivi.</p>
+
+                    <h3 class="font-bold text-gray-800 mt-4 mb-1">7bis.8. Securite des donnees</h3>
+                    <p class="text-sm">Les Developpeurs mettent en oeuvre des mesures techniques et organisationnelles appropriees au sens de l'article 32 du RGPD, incluant notamment : le hachage des mots de passe, le chiffrement des communications (HTTPS/TLS), la limitation d'acces aux donnees, et la journalisation des acces. Ces mesures sont proportionnees a la nature des donnees traitees et aux risques identifies.</p>
+                </section>
+
+                <!-- ARTICLE 8 -->
+                <section id="art8">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 8 — PROPRIETE INTELLECTUELLE</h2>
+                    <p><strong>8.1.</strong> L'ensemble des droits de propriete intellectuelle relatifs a PCS (code source, interfaces, algorithmes, documentation, marques, logos) sont et demeurent la propriete exclusive des Developpeurs.</p>
+                    <p><strong>8.2.</strong> L'Utilisateur se voit accorder une licence personnelle, non exclusive, non transferable, non cessible et revocable d'utilisation du Service, dans les limites des presentes CGU.</p>
+                    <p><strong>8.3.</strong> Toute reproduction, modification, decompilation, ingenierie inverse, distribution ou exploitation non autorisee du Service est strictement interdite.</p>
+                </section>
+
+                <!-- ARTICLE 9 -->
+                <section id="art9">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 9 — FORCE MAJEURE</h2>
+                    <p><strong>9.1.</strong> Les Developpeurs ne sauront etre tenus responsables de tout manquement ou retard dans l'execution de leurs obligations au titre des presentes CGU resultant d'un cas de force majeure, tel que defini par l'article 1218 du Code civil francais, incluant notamment : catastrophes naturelles, pandemies, guerres, actes de terrorisme, greves, pannes d'infrastructure, cyberattaques, decisions gouvernementales, modifications legislatives ou reglementaires.</p>
+                </section>
+
+                <!-- ARTICLE 10 -->
+                <section id="art10">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 10 — RESILIATION</h2>
+                    <p><strong>10.1.</strong> Les Developpeurs se reservent le droit de suspendre ou resilier l'acces de l'Utilisateur au Service, a tout moment, sans preavis ni motif, et sans indemnite.</p>
+                    <p><strong>10.2.</strong> L'Utilisateur peut cesser d'utiliser le Service a tout moment en supprimant son compte et toute copie du logiciel.</p>
+                    <p><strong>10.3.</strong> Les clauses relatives a la limitation de responsabilite (Article 4), l'indemnisation (Article 5), l'absence de garantie (Article 6), la propriete intellectuelle (Article 8) et le reglement des differends (Article 12) survivent a la resiliation des presentes CGU.</p>
+                </section>
+
+                <!-- ARTICLE 11 -->
+                <section id="art11">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 11 — MODIFICATION DES CGU</h2>
+                    <p><strong>11.1.</strong> Les Developpeurs se reservent le droit de modifier les presentes CGU a tout moment, sans notification prealable individuelle. Les CGU modifiees seront publiees sur la Plateforme avec mention de la date de derniere mise a jour.</p>
+                    <p><strong>11.2. La poursuite de l'utilisation du Service apres publication de toute modification constitue une acceptation pleine et entiere des CGU modifiees.</strong> Il appartient a l'Utilisateur de consulter regulierement les CGU en vigueur.</p>
+                </section>
+
+                <!-- ARTICLE 12 -->
+                <section id="art12">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 12 — DROIT APPLICABLE ET REGLEMENT DES DIFFERENDS</h2>
+                    <p><strong>12.1.</strong> Les presentes CGU sont regies et interpretees conformement au droit francais, sans egard aux principes de conflits de lois.</p>
+                    <p><strong>12.2.</strong> En cas de differend relatif a la validite, l'interpretation ou l'execution des presentes CGU, les parties s'engagent a rechercher une solution amiable pendant un delai de trente (30) jours a compter de la notification ecrite du differend.</p>
+                    <p><strong>12.3.</strong> A defaut de resolution amiable, tout litige sera soumis a la competence exclusive des tribunaux competents du ressort du siege social de l'Editeur, y compris en cas de refere, de procedure sur requete, d'appel en garantie ou de pluralite de defendeurs.</p>
+                    <p><strong>12.4.</strong> L'Utilisateur renonce expressement a toute action collective ("class action") et accepte que tout litige soit traite sur une base individuelle.</p>
+                </section>
+
+                <!-- ARTICLE 13 -->
+                <section id="art13">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 13 — DIVISIBILITE</h2>
+                    <p><strong>13.1.</strong> Si une disposition des presentes CGU est jugee invalide, illegale ou inapplicable par une juridiction competente, cette invalidite n'affectera pas la validite des autres dispositions, qui demeureront pleinement en vigueur. La clause invalidee sera remplacee par une clause valide produisant un effet economique et juridique aussi proche que possible de la clause initiale.</p>
+                </section>
+
+                <!-- ARTICLE 14 -->
+                <section id="art14">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">ARTICLE 14 — INTEGRALITE DE L'ACCORD</h2>
+                    <p><strong>14.1.</strong> Les presentes CGU constituent l'integralite de l'accord entre l'Utilisateur et les Developpeurs relatif a l'utilisation du Service et remplacent tout accord, arrangement ou negociation anterieur, oral ou ecrit, portant sur le meme objet.</p>
+                    <p><strong>14.2.</strong> Le fait pour les Developpeurs de ne pas exercer un droit ou une disposition des presentes CGU ne constitue pas une renonciation a ce droit ou a cette disposition.</p>
+                </section>
+
+                <!-- ARTICLE 15 -->
+                <section id="art15">
+                    <div class="bg-gray-900 text-white rounded-lg p-5">
+                        <h2 class="text-lg font-bold mb-3">ARTICLE 15 — RECONNAISSANCE ET ACCEPTATION</h2>
+                        <p class="font-bold uppercase mb-3">EN UTILISANT PARKINGCAMSECURITY, L'UTILISATEUR DECLARE EXPRESSEMENT ET SANS RESERVE :</p>
+                        <ul class="list-disc list-inside space-y-1.5 text-sm">
+                            <li>Avoir lu et compris l'integralite des presentes CGU ;</li>
+                            <li>Accepter que l'utilisation du Service est entierement a ses risques et sous sa responsabilite personnelle ;</li>
+                            <li>Reconnaitre que les Developpeurs fournissent un outil technique neutre et ne sauraient etre tenus responsables de quelque utilisation que ce soit ;</li>
+                            <li>S'engager a indemniser et garantir les Developpeurs contre toute consequence resultant de son utilisation du Service ;</li>
+                            <li>Renoncer a toute reclamation, action ou recours contre les Developpeurs lies a l'utilisation du Service.</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <!-- CONTACT -->
+                <section class="border-t border-gray-200 pt-6">
+                    <h2 class="text-lg font-bold text-gray-900 mb-2">CONTACT</h2>
+                    <p>Pour toute question relative aux presentes Conditions ou pour exercer vos droits RGPD :</p>
+                    <p class="mt-2"><a href="mailto:contact@parkingcamsecurity.com" class="text-blue-600 hover:underline font-medium">contact@parkingcamsecurity.com</a></p>
+                </section>
+
             </div>
-
-            <!-- English -->
-            <div id="lang-en" class="p-8 prose prose-sm max-w-none text-gray-700 space-y-6">
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">1. Acceptance of Terms</h2>
-                    <p>By accessing or using ParkingCamSecurity (hereinafter "PCS", "the Platform", "the Service"), you acknowledge that you have read, understood, and agree to be bound by these Terms of Use. If you do not agree, you must not use the Service.</p>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">2. Purpose of the Service</h2>
-                    <p>PCS is a video surveillance management platform designed for monitoring parking areas and private or professional premises. The Service allows users to connect IP cameras, ESP32-CAM devices, smartphones, or webcams to a central dashboard for live viewing and vehicle plate recognition.</p>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">3. User Responsibilities</h2>
-                    <p>You are solely responsible for ensuring that your use of PCS complies with all applicable laws and regulations in your jurisdiction, including but not limited to:</p>
-                    <ul class="list-disc list-inside mt-2 space-y-1">
-                        <li>Privacy and data protection laws (GDPR, CCPA, etc.)</li>
-                        <li>Laws governing video surveillance and CCTV installation</li>
-                        <li>Obligations to inform individuals that they are being recorded</li>
-                        <li>Restrictions on recording public spaces without authorization</li>
-                    </ul>
-                    <p class="mt-3">You must not use PCS to monitor, record, or process individuals without their knowledge where prohibited by law.</p>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">4. Disclaimer of Liability</h2>
-                    <p class="font-semibold text-gray-800">The developers and operators of ParkingCamSecurity expressly disclaim all liability for:</p>
-                    <ul class="list-disc list-inside mt-2 space-y-1">
-                        <li>Any unlawful, abusive, or unauthorized use of the platform by users</li>
-                        <li>Any violation of privacy rights, data protection laws, or surveillance regulations arising from user activity</li>
-                        <li>Any damages, claims, penalties, or legal proceedings resulting from misuse of the Service</li>
-                        <li>The accuracy, completeness, or legality of any video footage or license plate data collected through the platform</li>
-                    </ul>
-                    <p class="mt-3">The Service is provided <strong>"as is"</strong>, without warranty of any kind. Use of PCS is entirely at your own risk and under your own legal responsibility.</p>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">5. Prohibited Uses</h2>
-                    <p>You agree not to use PCS for:</p>
-                    <ul class="list-disc list-inside mt-2 space-y-1">
-                        <li>Unauthorized surveillance of individuals or private property</li>
-                        <li>Stalking, harassment, or any form of intimidation</li>
-                        <li>Collecting data on individuals without proper legal basis</li>
-                        <li>Any purpose that violates applicable law or regulation</li>
-                    </ul>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">6. Data & Privacy</h2>
-                    <p>Video streams and captured frames are processed on our servers solely to provide the Service. We do not sell or share your data with third parties. You are responsible for any personal data collected through your camera feeds in accordance with applicable data protection law.</p>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">7. Modifications</h2>
-                    <p>We reserve the right to modify these Terms at any time. Continued use of the Service after any change constitutes your acceptance of the updated Terms.</p>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">8. Contact</h2>
-                    <p>For any questions regarding these Terms, please contact us at: <a href="mailto:contact@parkingcamsecurity.com" class="text-blue-600 hover:underline">contact@parkingcamsecurity.com</a></p>
-                </section>
-            </div>
-
-            <!-- Français -->
-            <div id="lang-fr" class="hidden p-8 prose prose-sm max-w-none text-gray-700 space-y-6">
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">1. Acceptation des conditions</h2>
-                    <p>En accédant à ParkingCamSecurity (ci-après « PCS », « la Plateforme », « le Service »), vous reconnaissez avoir lu, compris et accepté les présentes Conditions d'utilisation. Si vous n'y adhérez pas, vous devez cesser d'utiliser le Service.</p>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">2. Objet du Service</h2>
-                    <p>PCS est une plateforme de gestion de vidéosurveillance destinée à la surveillance de parkings et de locaux privés ou professionnels. Le Service permet de connecter des caméras IP, des modules ESP32-CAM, des smartphones ou des webcams à un tableau de bord centralisé pour la visualisation en direct et la reconnaissance de plaques d'immatriculation.</p>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">3. Responsabilités de l'utilisateur</h2>
-                    <p>Vous êtes seul responsable de vous assurer que votre utilisation de PCS est conforme à toutes les lois et réglementations applicables dans votre juridiction, notamment :</p>
-                    <ul class="list-disc list-inside mt-2 space-y-1">
-                        <li>Les lois relatives à la protection de la vie privée et des données (RGPD, etc.)</li>
-                        <li>La réglementation encadrant la vidéosurveillance et les systèmes de sécurité</li>
-                        <li>L'obligation d'information des personnes filmées</li>
-                        <li>Les restrictions applicables à la captation d'images dans les espaces publics</li>
-                    </ul>
-                    <p class="mt-3">Il vous est interdit d'utiliser PCS pour surveiller, enregistrer ou traiter des individus à leur insu lorsque la loi l'interdit.</p>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">4. Limitation de responsabilité</h2>
-                    <p class="font-semibold text-gray-800">Les développeurs et opérateurs de ParkingCamSecurity déclinent expressément toute responsabilité pour :</p>
-                    <ul class="list-disc list-inside mt-2 space-y-1">
-                        <li>Toute utilisation illicite, abusive ou non autorisée de la plateforme par les utilisateurs</li>
-                        <li>Toute violation des droits à la vie privée, de la législation sur la protection des données ou de la réglementation sur la vidéosurveillance découlant de l'activité des utilisateurs</li>
-                        <li>Tout dommage, réclamation, sanction ou procédure judiciaire résultant d'une mauvaise utilisation du Service</li>
-                        <li>L'exactitude, l'exhaustivité ou la légalité des images ou données de plaques collectées via la plateforme</li>
-                    </ul>
-                    <p class="mt-3">Le Service est fourni <strong>« en l'état »</strong>, sans garantie d'aucune sorte. L'utilisation de PCS est entièrement à vos risques et sous votre responsabilité légale personnelle.</p>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">5. Utilisations interdites</h2>
-                    <p>Vous vous engagez à ne pas utiliser PCS pour :</p>
-                    <ul class="list-disc list-inside mt-2 space-y-1">
-                        <li>La surveillance non autorisée de personnes ou de propriétés privées</li>
-                        <li>Le harcèlement, la filature ou toute forme d'intimidation</li>
-                        <li>La collecte de données personnelles sans base légale appropriée</li>
-                        <li>Toute finalité contraire aux lois et réglementations en vigueur</li>
-                    </ul>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">6. Données et confidentialité</h2>
-                    <p>Les flux vidéo et images capturées sont traités sur nos serveurs uniquement pour fournir le Service. Nous ne vendons ni ne partageons vos données avec des tiers. Vous êtes responsable de toute donnée personnelle collectée via vos flux caméra, conformément à la législation applicable en matière de protection des données.</p>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">7. Modifications</h2>
-                    <p>Nous nous réservons le droit de modifier les présentes Conditions à tout moment. La poursuite de l'utilisation du Service après toute modification vaut acceptation des Conditions mises à jour.</p>
-                </section>
-
-                <section>
-                    <h2 class="text-lg font-bold text-gray-900 mb-2">8. Contact</h2>
-                    <p>Pour toute question relative aux présentes Conditions, contactez-nous à : <a href="mailto:contact@parkingcamsecurity.com" class="text-blue-600 hover:underline">contact@parkingcamsecurity.com</a></p>
-                </section>
-            </div>
-
         </div>
 
         <p class="text-center text-gray-400 text-xs mt-6">
-            <a href="/login" class="hover:text-gray-600">← Back to login</a>
-            &nbsp;·&nbsp; ParkingCamSecurity &copy; 2024
+            <a href="/login" class="hover:text-gray-600">Retour a la connexion</a>
+            &nbsp;&middot;&nbsp; ParkingCamSecurity &copy; 2026
         </p>
 
     </div>
 
-    <script>
-        function showLang(lang) {
-            document.getElementById('lang-en').classList.toggle('hidden', lang !== 'en');
-            document.getElementById('lang-fr').classList.toggle('hidden', lang !== 'fr');
-            document.getElementById('tab-en').className = lang === 'en'
-                ? 'flex-1 py-3 text-sm font-semibold text-blue-600 border-b-2 border-blue-600 transition'
-                : 'flex-1 py-3 text-sm font-semibold text-gray-400 hover:text-gray-600 border-b-2 border-transparent transition';
-            document.getElementById('tab-fr').className = lang === 'fr'
-                ? 'flex-1 py-3 text-sm font-semibold text-blue-600 border-b-2 border-blue-600 transition'
-                : 'flex-1 py-3 text-sm font-semibold text-gray-400 hover:text-gray-600 border-b-2 border-transparent transition';
-        }
-    </script>
 </body>
 </html>
