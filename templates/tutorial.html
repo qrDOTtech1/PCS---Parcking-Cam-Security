@@ -383,11 +383,12 @@ FLASK_SECRET_KEY  = une-autre-chaine-aleatoire-differente</div>
                     <p class="text-amber-400 text-sm font-semibold uppercase tracking-widest mb-6">Configuration de la caméra dédiée PCS</p>
 
                     <p class="text-gray-300 leading-relaxed mb-6">
-                        La PCS Cam v1 est une petite merveille d'ingénierie embarquée.
-                        Un minuscule module caméra connecté en WiFi, capable de streamer en direct,
-                        d'enregistrer des segments vidéo et de répondre à vos commandes à la milliseconde.
-                        Elle tient dans votre paume et coûte moins cher qu'un repas au restaurant.
-                        Voici comment la mettre en service.
+                        La PCS Cam v1 est une pièce d'ingénierie embarquée sérieuse.
+                        Un module caméra WiFi compact, conçu spécifiquement pour PCS — streaming en direct,
+                        enregistrement de segments vidéo, détection temps réel, réponse aux commandes à la milliseconde.
+                        Ce n'est pas un gadget à 3 euros trouvé dans un bac à soldats.
+                        C'est un outil de surveillance professionnel, pensé, assemblé et calibré pour durer.
+                        Traitez-la en conséquence. Voici comment la mettre en service.
                     </p>
 
                     <div class="mb-7">
@@ -432,26 +433,40 @@ Clé API  : pcscam-entree-nord-2024   <span style="color:#6c7086;">// inventez q
                         <div class="code-block ml-8 text-xs">SSID WiFi    : votre-réseau-local
 Mot de passe : votre-mot-de-passe-wifi
 PCS Server   : https://votre-instance.railway.app
-API Key      : pcscam-entree-nord-2024   <span style="color:#6c7086;">// la clé définie à l'étape précédente</span></div>
+API Key      : pcscam-entree-nord-2024   <span style="color:#6c7086;">// la clé définie à l'étape précédente — elle doit correspondre exactement</span></div>
                         <p class="text-gray-400 text-sm leading-relaxed ml-8 mt-3">
-                            Sauvegardez. La caméra redémarre, se connecte à votre WiFi et contacte PCS.
-                            Dans votre tableau de bord, elle apparaît en ligne — le petit point vert pulse.
-                            C'est satisfaisant. Vraiment.
+                            Sauvegardez. La caméra redémarre et se connecte à votre réseau WiFi.
+                            Elle contacte ensuite PCS en utilisant sa clé API comme identifiant.
+                            PCS reconnaît cette clé — qu'il attend depuis l'étape 2 — et associe la caméra physique
+                            à l'entrée que vous avez créée dans le tableau de bord.
                         </p>
+                        <div class="tip-box rounded-lg p-3 ml-8 mt-3 text-xs text-indigo-300">
+                            <strong class="text-indigo-200">Pour retrouver votre caméra :</strong> dans le dashboard PCS, elle apparaît dans la liste sous le nom que vous lui avez donné à l'étape 2, avec son <strong>ID caméra</strong> visible dans la page de gestion. Le point vert pulse dès que la connexion est établie.
+                        </div>
                     </div>
 
                     <div class="mb-7">
                         <div class="flex items-center gap-2 mb-3">
                             <span class="w-6 h-6 rounded-full bg-amber-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">4</span>
-                            <h3 class="font-bold text-white">Positionner la caméra</h3>
+                            <h3 class="font-bold text-white">Positionner la caméra &amp; la placer sur la carte</h3>
                         </div>
-                        <p class="text-gray-400 text-sm leading-relaxed ml-8">
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
                             La PCS Cam v1 fonctionne mieux à <strong class="text-white">hauteur de plaque</strong> ou légèrement au-dessus,
                             avec un angle qui capte les véhicules de face ou de trois quarts.
-                            Évitez le contre-jour direct. Assurez-vous d'avoir du WiFi à l'emplacement choisi —
-                            une caméra sans signal, c'est une sculpture moderne coûteuse.
-                            Fixez-la solidement. Les vibrations sont l'ennemi de la lecture de plaques.
+                            Évitez le contre-jour direct. Assurez-vous d'avoir du WiFi à l'emplacement choisi.
+                            Fixez-la solidement — les vibrations sont l'ennemi juré de la lecture de plaques.
+                            Un équipement de cette qualité mérite un montage sérieux, pas deux bandes de scotch.
                         </p>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Une fois la caméra en ligne, ouvrez sa page de gestion dans PCS
+                            (icône engrenage depuis le dashboard) et renseignez ses <strong class="text-white">coordonnées GPS</strong>.
+                            PCS place alors la caméra sur une carte interactive — indispensable dès que vous gérez
+                            plusieurs points de surveillance sur un site. Un coup d'œil, et vous savez exactement
+                            quelle caméra couvre quelle zone. Pas de devinettes.
+                        </p>
+                        <div class="tip-box rounded-lg p-3 ml-8 text-xs text-indigo-300">
+                            <strong class="text-indigo-200">Astuce coordonnées GPS :</strong> Sur Google Maps, faites un clic droit sur l'emplacement exact de la caméra → "Quelles sont ces coordonnées ?". Copiez-les directement dans PCS.
+                        </div>
                     </div>
 
                     <div>
