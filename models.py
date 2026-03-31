@@ -42,6 +42,19 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
 
+class CameraConnection(db.Model):
+    """Historique des connexions d'une caméra (connect / disconnect)."""
+    __tablename__ = "camera_connection"
+    id = db.Column(db.Integer, primary_key=True)
+    camera_id = db.Column(db.Integer, db.ForeignKey("camera.id"), nullable=False)
+    connected_at = db.Column(db.DateTime, default=datetime.utcnow)
+    disconnected_at = db.Column(db.DateTime, nullable=True)
+    ip_address = db.Column(db.String(50), default="")
+    source = db.Column(db.String(20), default="http")  # "esp32" | "http" | "socketio"
+
+    camera = db.relationship("Camera", backref="connections")
+
+
 class Camera(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -57,6 +70,7 @@ class Camera(db.Model):
     is_streaming = db.Column(db.Boolean, default=False)
     flash_detect_enabled = db.Column(db.Boolean, default=True)  # gyrophare détection
     address = db.Column(db.String(200), default="")  # adresse postale
+    camera_type = db.Column(db.String(20), default="generic")  # generic | esp32 | ipcam | smartphone | webcam
 
     def get_config(self):
         import json

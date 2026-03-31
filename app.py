@@ -41,6 +41,7 @@ from models import (
     db,
     User,
     Camera,
+    CameraConnection,
     Blacklist,
     NotificationTarget,
     SystemConfig,
@@ -385,6 +386,13 @@ def create_tables():
             except Exception:
                 pass
 
+        # Migration: camera_type sur camera
+        try:
+            conn.execute(text("ALTER TABLE camera ADD COLUMN camera_type VARCHAR(20) DEFAULT 'generic'"))
+            conn.commit()
+        except Exception:
+            pass
+
         # Migration: nouvelles colonnes User (list_mode, ocr_reinforcement)
         for col, defn in [
             ("list_mode", "VARCHAR(10) DEFAULT 'blacklist'"),
@@ -574,7 +582,22 @@ def ping():
     if not camera:
         return jsonify({"status": "error", "message": "Invalid API Key"}), 401
 
+    # Détecter reconnexion après coupure (> 10 min sans signal)
+    was_offline = (
+        not camera.last_seen
+        or (datetime.utcnow() - camera.last_seen).total_seconds() > 600
+    )
+    # Détection automatique ESP32 via header
+    if request.headers.get("X-ESP32-CAM") == "1" and camera.camera_type != "esp32":
+        camera.camera_type = "esp32"
     camera.last_seen = datetime.utcnow()
+    if was_offline:
+        conn_log = CameraConnection(
+            camera_id=camera.id,
+            ip_address=request.remote_addr or "",
+            source=camera.camera_type or "http",
+        )
+        db.session.add(conn_log)
     db.session.commit()
     return jsonify(
         {
@@ -1006,6 +1029,22 @@ def handle_esp32_register(data):
         CAMERA_SOCKETS[camera.id] = request.sid
         join_room(f"camera_{camera.id}")
 
+        # Marquer comme ESP32 et enregistrer la connexion
+        was_offline = (
+            not camera.last_seen
+            or (datetime.utcnow() - camera.last_seen).total_seconds() > 600
+        )
+        camera.camera_type = "esp32"
+        camera.last_seen = datetime.utcnow()
+        if was_offline:
+            conn_log = CameraConnection(
+                camera_id=camera.id,
+                ip_address=request.remote_addr or "",
+                source="esp32",
+            )
+            db.session.add(conn_log)
+        db.session.commit()
+
         emit(
             "registered",
             {
@@ -1382,9 +1421,34 @@ def camera_view(camera_id):
     recent_detections = (
         PlateDetection.query.filter_by(camera_id=camera_id)
         .order_by(PlateDetection.detected_at.desc())
-        .limit(50)
+        .limit(100)
         .all()
     )
+
+    # Historique des connexions (20 dernières)
+    recent_connections = (
+        CameraConnection.query.filter_by(camera_id=camera_id)
+        .order_by(CameraConnection.connected_at.desc())
+        .limit(20)
+        .all()
+    )
+
+    # Cache local alertes (static/cam_cache/<camera_id>/)
+    import glob as glob_mod
+    cam_cache_dir = os.path.join(app.root_path, "static", "cam_cache", str(camera_id))
+    cache_files = []
+    cache_total_bytes = 0
+    if os.path.isdir(cam_cache_dir):
+        for f in sorted(glob_mod.glob(os.path.join(cam_cache_dir, "*.gif")),
+                        key=os.path.getmtime, reverse=True):
+            sz = os.path.getsize(f)
+            cache_total_bytes += sz
+            cache_files.append({
+                "name": os.path.basename(f),
+                "size_kb": round(sz / 1024, 1),
+                "mtime": datetime.utcfromtimestamp(os.path.getmtime(f)).strftime("%d/%m %H:%M"),
+            })
+    cache_total_mb = round(cache_total_bytes / (1024 * 1024), 1)
 
     return render_template(
         "camera_view.html",
@@ -1392,7 +1456,76 @@ def camera_view(camera_id):
         cameras=cameras,
         username=session["username"],
         recent_detections=recent_detections,
+        recent_connections=recent_connections,
+        cache_files=cache_files,
+        cache_total_mb=cache_total_mb,
     )
+
+
+@app.route("/camera/<int:camera_id>/clean_history", methods=["POST"])
+@require_auth
+def clean_camera_history(camera_id):
+    """Supprime tout l'historique de détections d'une caméra."""
+    cam = Camera.query.filter_by(id=camera_id, user_id=session["user_id"]).first()
+    if not cam:
+        flash("Caméra non trouvée.", "error")
+        return redirect(url_for("dashboard"))
+    count = PlateDetection.query.filter_by(camera_id=camera_id).delete()
+    db.session.commit()
+    flash(f"{count} détection(s) supprimée(s).", "success")
+    return redirect(url_for("camera_view", camera_id=camera_id))
+
+
+@app.route("/camera/<int:camera_id>/clean_connections", methods=["POST"])
+@require_auth
+def clean_camera_connections(camera_id):
+    """Supprime l'historique de connexions d'une caméra."""
+    cam = Camera.query.filter_by(id=camera_id, user_id=session["user_id"]).first()
+    if not cam:
+        flash("Caméra non trouvée.", "error")
+        return redirect(url_for("dashboard"))
+    count = CameraConnection.query.filter_by(camera_id=camera_id).delete()
+    db.session.commit()
+    flash(f"{count} entrée(s) de connexion supprimée(s).", "success")
+    return redirect(url_for("camera_view", camera_id=camera_id))
+
+
+@app.route("/camera/<int:camera_id>/clean_cache", methods=["POST"])
+@require_auth
+def clean_camera_cache(camera_id):
+    """Vide le cache d'alertes local de la caméra (static/cam_cache/<id>/)."""
+    cam = Camera.query.filter_by(id=camera_id, user_id=session["user_id"]).first()
+    if not cam:
+        flash("Caméra non trouvée.", "error")
+        return redirect(url_for("dashboard"))
+    import glob as glob_mod
+    cam_cache_dir = os.path.join(app.root_path, "static", "cam_cache", str(camera_id))
+    count = 0
+    if os.path.isdir(cam_cache_dir):
+        for f in glob_mod.glob(os.path.join(cam_cache_dir, "*.gif")):
+            try:
+                os.remove(f)
+                count += 1
+            except Exception:
+                pass
+    flash(f"{count} fichier(s) cache supprimé(s).", "success")
+    return redirect(url_for("camera_view", camera_id=camera_id))
+
+
+@app.route("/camera/<int:camera_id>/cache_gif/<path:filename>")
+@require_auth
+def serve_cache_gif(camera_id, filename):
+    """Sert un GIF depuis le cache local d'une caméra."""
+    cam = Camera.query.filter_by(id=camera_id, user_id=session["user_id"]).first()
+    if not cam:
+        return "Not found", 404
+    import re as _re
+    if not _re.match(r'^[\w.\-]+$', filename):
+        return "Bad filename", 400
+    gif_path = os.path.join(app.root_path, "static", "cam_cache", str(camera_id), filename)
+    if not os.path.exists(gif_path):
+        return "Not found", 404
+    return send_file(gif_path, mimetype="image/gif")
 
 
 @app.route("/alert_gif/<int:detection_id>")

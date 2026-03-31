@@ -24,6 +24,12 @@
                     </a>
                     <span class="text-gray-300">/</span>
                     <span class="font-semibold text-gray-700">{{ camera.name }}</span>
+                    {% if camera.camera_type == 'esp32' %}
+                    <span class="px-2 py-0.5 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-xs font-bold flex items-center gap-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
+                        ESP32
+                    </span>
+                    {% endif %}
                     {% if camera.is_online %}
                     <span class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-green-700 text-xs font-semibold">
                         <span class="w-1.5 h-1.5 rounded-full bg-green-500 pulse inline-block"></span>
@@ -123,6 +129,120 @@
                 </div>
             </div>
 
+                <!-- Historique des connexions -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
+                        <h2 class="font-bold text-gray-900 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
+                            Connexions
+                            {% if recent_connections %}
+                            <span class="text-xs font-normal text-gray-400">({{ recent_connections|length }})</span>
+                            {% endif %}
+                        </h2>
+                        <form method="POST" action="{{ url_for('clean_camera_connections', camera_id=camera.id) }}"
+                              onsubmit="return confirm('Effacer tout l\'historique des connexions ?')">
+                            <button type="submit" class="text-xs text-gray-400 hover:text-red-600 transition font-medium">Effacer</button>
+                        </form>
+                    </div>
+                    <div class="p-4">
+                        {% if recent_connections %}
+                        <div class="overflow-x-auto max-h-48 overflow-y-auto">
+                            <table class="w-full text-left text-xs">
+                                <thead class="sticky top-0 bg-white">
+                                    <tr class="text-gray-400 border-b border-gray-100 uppercase tracking-wide">
+                                        <th class="pb-2 font-medium">Date / Heure</th>
+                                        <th class="pb-2 font-medium">Source</th>
+                                        <th class="pb-2 font-medium">IP</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-50">
+                                    {% for conn in recent_connections %}
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="py-1.5 text-gray-600 whitespace-nowrap">{{ conn.connected_at.strftime('%d/%m/%Y %H:%M:%S') }}</td>
+                                        <td class="py-1.5">
+                                            {% if conn.source == 'esp32' %}
+                                            <span class="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-bold">ESP32</span>
+                                            {% else %}
+                                            <span class="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">{{ conn.source }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="py-1.5 font-mono text-gray-500">{{ conn.ip_address or '—' }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-xs text-gray-400 text-center py-3">Aucune connexion enregistrée.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Cache local d'alertes -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
+                        <h2 class="font-bold text-gray-900 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7M4 7h16M10 11v6M14 11v6M9 7V4h6v3"/>
+                            </svg>
+                            Cache alertes
+                            <span class="text-xs font-normal px-1.5 py-0.5 rounded {% if cache_total_mb > 450 %}bg-red-100 text-red-700{% elif cache_total_mb > 300 %}bg-orange-100 text-orange-700{% else %}bg-gray-100 text-gray-500{% endif %}">
+                                {{ cache_total_mb }} Mo / 500 Mo
+                            </span>
+                        </h2>
+                        <form method="POST" action="{{ url_for('clean_camera_cache', camera_id=camera.id) }}"
+                              onsubmit="return confirm('Vider tout le cache d\'alertes de cette caméra ?')">
+                            <button type="submit" class="text-xs bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 transition px-2 py-1 rounded font-medium">
+                                Vider le cache
+                            </button>
+                        </form>
+                    </div>
+                    <div class="p-4">
+                        {% if cache_files %}
+                        <!-- Barre de progression 500 MB -->
+                        <div class="mb-3">
+                            <div class="w-full bg-gray-100 rounded-full h-1.5">
+                                <div class="h-1.5 rounded-full {% if cache_total_mb > 450 %}bg-red-500{% elif cache_total_mb > 300 %}bg-orange-400{% else %}bg-blue-500{% endif %}"
+                                     style="width: {{ [[(cache_total_mb / 500 * 100)|round|int, 100]|min, 0]|max }}%"></div>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1">{{ cache_files|length }} fichier(s) stocké(s)</p>
+                        </div>
+                        <div class="overflow-x-auto max-h-48 overflow-y-auto">
+                            <table class="w-full text-left text-xs">
+                                <thead class="sticky top-0 bg-white">
+                                    <tr class="text-gray-400 border-b border-gray-100 uppercase tracking-wide">
+                                        <th class="pb-2 font-medium">Fichier</th>
+                                        <th class="pb-2 font-medium">Date</th>
+                                        <th class="pb-2 font-medium">Taille</th>
+                                        <th class="pb-2 font-medium"></th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-50">
+                                    {% for cf in cache_files %}
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="py-1.5 font-mono text-gray-600 truncate max-w-xs">{{ cf.name }}</td>
+                                        <td class="py-1.5 text-gray-500 whitespace-nowrap">{{ cf.mtime }}</td>
+                                        <td class="py-1.5 text-gray-500 whitespace-nowrap">{{ cf.size_kb }} Ko</td>
+                                        <td class="py-1.5">
+                                            <a href="{{ url_for('serve_cache_gif', camera_id=camera.id, filename=cf.name) }}" target="_blank"
+                                               class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                                GIF
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-xs text-gray-400 text-center py-3">Aucun clip d'alerte en cache.</p>
+                        {% endif %}
+                    </div>
+                </div>
+
                 <!-- Historique des détections pour cette caméra -->
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div class="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
@@ -135,6 +255,10 @@
                             <span class="text-xs font-normal text-gray-400">({{ recent_detections|length }})</span>
                             {% endif %}
                         </h2>
+                        <form method="POST" action="{{ url_for('clean_camera_history', camera_id=camera.id) }}"
+                              onsubmit="return confirm('Effacer tout l\'historique de détections pour cette caméra ?')">
+                            <button type="submit" class="text-xs text-gray-400 hover:text-red-600 transition font-medium">Effacer historique</button>
+                        </form>
                     </div>
                     <div class="p-4">
                         {% if recent_detections %}

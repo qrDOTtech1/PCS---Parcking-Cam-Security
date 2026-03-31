@@ -42,6 +42,25 @@ TRACK_ID_COUNTER = {}  # cam_id -> int
 TRACK_EXPIRY_SECONDS = 30  # Si un véhicule disparaît pendant 30s, on l'oublie
 
 
+def _enforce_cache_limit(cache_dir, max_bytes=500 * 1024 * 1024):
+    """Supprime les fichiers les plus anciens pour rester sous max_bytes."""
+    import glob as _glob
+    files = sorted(
+        _glob.glob(os.path.join(cache_dir, "*.gif")),
+        key=os.path.getmtime
+    )
+    total = sum(os.path.getsize(f) for f in files)
+    while total > max_bytes and files:
+        oldest = files.pop(0)
+        try:
+            sz = os.path.getsize(oldest)
+            os.remove(oldest)
+            total -= sz
+            logger.info(f"[Cache] Supprimé (limite 500 MB): {os.path.basename(oldest)}")
+        except Exception:
+            pass
+
+
 def compute_iou(boxA, boxB):
     """Calcule l'Intersection sur Union (IoU) entre deux bounding boxes."""
     if not boxA or not boxB or len(boxA) != 4 or len(boxB) != 4:
@@ -568,11 +587,12 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                         )
                                         # Sauvegarder le GIF sur disque
                                         if gif_bytes:
-                                            gif_dir = os.path.join(
-                                                os.path.dirname(__file__), "static", "alert_gifs"
-                                            )
-                                            os.makedirs(gif_dir, exist_ok=True)
+                                            base_dir = os.path.dirname(__file__)
                                             gif_filename = f"alert_{det.id}_{cam_id}_{int(time.time())}.gif"
+
+                                            # 1. Dossier global alert_gifs (7j auto-cleanup)
+                                            gif_dir = os.path.join(base_dir, "static", "alert_gifs")
+                                            os.makedirs(gif_dir, exist_ok=True)
                                             gif_full = os.path.join(gif_dir, gif_filename)
                                             with open(gif_full, "wb") as gf:
                                                 gf.write(gif_bytes)
@@ -580,6 +600,17 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                             det.gif_path = gif_rel_path
                                             db.session.commit()
                                             logger.info(f"[ANPR] GIF saved: {gif_rel_path}")
+
+                                            # 2. Cache local par caméra (500 MB max)
+                                            cam_cache = os.path.join(
+                                                base_dir, "static", "cam_cache", str(cam_id)
+                                            )
+                                            os.makedirs(cam_cache, exist_ok=True)
+                                            cache_path = os.path.join(cam_cache, gif_filename)
+                                            with open(cache_path, "wb") as cf:
+                                                cf.write(gif_bytes)
+                                            # Appliquer la limite de 500 MB
+                                            _enforce_cache_limit(cam_cache, max_bytes=500 * 1024 * 1024)
                                     except Exception as e:
                                         logger.warning(f"[ANPR] GIF creation error: {e}")
 

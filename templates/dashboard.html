@@ -257,8 +257,7 @@
                 <div class="p-6">
                     <p class="text-sm text-gray-500 mb-4">Connectez vos modèles Roboflow pour une détection experte. Chaque modèle peut avoir ses propres règles d'alerte.</p>
 
-                    <!-- Renforcement OCR -->
-                    {% if roboflow_models %}
+                    <!-- Renforcement OCR — toujours visible dans la section Roboflow -->
                     <div class="mb-5 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
                         <div class="flex items-start gap-3">
                             <svg class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -281,7 +280,6 @@
                             </button>
                         </form>
                     </div>
-                    {% endif %}
 
                     <!-- Liste des modèles existants -->
                     {% if roboflow_models %}
