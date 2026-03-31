@@ -16,6 +16,8 @@ class User(db.Model):
     max_blacklist = db.Column(db.Integer, default=50)  # -1 = unlimited
     features_json = db.Column(db.Text, default="[]")  # JSON list of enabled features
     admin_notes = db.Column(db.Text, default="")
+    list_mode = db.Column(db.String(10), default="blacklist")  # blacklist | whitelist
+    ocr_reinforcement = db.Column(db.Boolean, default=False)  # Roboflow plate-region OCR boost
 
     cameras = db.relationship(
         "Camera", backref="owner", lazy=True, cascade="all, delete-orphan"

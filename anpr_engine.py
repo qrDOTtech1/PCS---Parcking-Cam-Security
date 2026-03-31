@@ -24,6 +24,22 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+def compute_iou(boxA, boxB):
+    """Calcule l'Intersection sur Union (IoU) entre deux bounding boxes [x1,y1,x2,y2]."""
+    if not boxA or not boxB or len(boxA) != 4 or len(boxB) != 4:
+        return 0.0
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+    inter = max(0, float(xB - xA)) * max(0, float(yB - yA))
+    if inter == 0:
+        return 0.0
+    areaA = max(1, (boxA[2] - boxA[0]) * (boxA[3] - boxA[1]))
+    areaB = max(1, (boxB[2] - boxB[0]) * (boxB[3] - boxB[1]))
+    return inter / (areaA + areaB - inter)
+
+
 def normalize_plate(plate_str):
     """Normalise une plaque : supprime caractères non-alphanumériques, uppercase."""
     if not plate_str:
@@ -341,11 +357,53 @@ class ANPREngine:
 
         return results
 
-    def detect_plates(self, image_bytes, roboflow_key=None, roboflow_model=None):
+    def detect_plate_regions(self, image_bytes, api_key, confidence=0.45):
+        """
+        Appelle le modèle Roboflow 'licenta-1g8sd/2' pour localiser
+        précisément les plaques dans l'image.
+
+        Returns:
+            list[[x1,y1,x2,y2]] — bounding boxes des plaques détectées
+        """
+        import cv2
+
+        rf_res = self._call_roboflow(api_key, "licenta-1g8sd/2", image_bytes)
+        if not rf_res or "predictions" not in rf_res:
+            return []
+
+        img_array = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        if img is None:
+            return []
+        h, w = img.shape[:2]
+
+        bboxes = []
+        for p in rf_res.get("predictions", []):
+            if p.get("confidence", 0) < confidence:
+                continue
+            # licenta-1g8sd/2 retourne class="license-plate"
+            w_half = p["width"] / 2
+            h_half = p["height"] / 2
+            x1 = max(0, int(p["x"] - w_half))
+            y1 = max(0, int(p["y"] - h_half))
+            x2 = min(w, int(p["x"] + w_half))
+            y2 = min(h, int(p["y"] + h_half))
+            if (x2 - x1) > 10 and (y2 - y1) > 5:
+                bboxes.append([x1, y1, x2, y2])
+
+        logger.info(f"[ANPR] Roboflow plate regions: {len(bboxes)} plaque(s) localisée(s)")
+        return bboxes
+
+    def detect_plates(self, image_bytes, roboflow_key=None, roboflow_model=None,
+                      rf_plate_bboxes=None):
         """
         Détecte les véhicules et plaques dans une image JPEG brute.
         YOLO + EasyOCR + scan plein écran.
         Les appels Roboflow sont gérés séparément par le worker.
+
+        rf_plate_bboxes : list[[x1,y1,x2,y2]] provenant de detect_plate_regions().
+            Si fourni, ajoute des tentatives OCR sur ces régions précises
+            (renforcement OCR) en plus du pipeline YOLO standard.
 
         Si roboflow_key/roboflow_model sont fournis (legacy), ils sont ignorés.
         """
@@ -396,6 +454,35 @@ class ANPREngine:
         if not vehicle_crops:
             color = self._detect_color(img)
             vehicle_crops = [(img, [0, 0, w, h], 0.0, "unknown", color)]
+
+        # Renforcement OCR : si des régions de plaques ont été pré-localisées par Roboflow,
+        # ajouter des entrées haute-précision dans vehicle_crops.
+        # On cherche le véhicule YOLO qui contient chaque bbox plaque pour récupérer
+        # vehicle_type/color. Si aucun match, on utilise "unknown".
+        if rf_plate_bboxes:
+            for pb in rf_plate_bboxes:
+                px1, py1, px2, py2 = pb
+                # Pad léger autour de la bbox plaque pour ne pas couper les bords
+                pad = 4
+                px1c = max(0, px1 - pad)
+                py1c = max(0, py1 - pad)
+                px2c = min(w, px2 + pad)
+                py2c = min(h, py2 + pad)
+                plate_only_crop = img[py1c:py2c, px1c:px2c]
+                if plate_only_crop.size == 0:
+                    continue
+                # Trouver le véhicule YOLO qui contient cette plaque (meilleur IoU)
+                best_vt, best_vc, best_conf_v = "unknown", "unknown", 0.9
+                best_iou = 0.0
+                for vc_crop, vc_bbox, vc_conf, vc_type, vc_color in vehicle_crops:
+                    iou = compute_iou(pb, vc_bbox)
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_vt, best_vc, best_conf_v = vc_type, vc_color, vc_conf
+                # Ajouter comme crop prioritaire (conf élevée = Roboflow l'a vu)
+                vehicle_crops.insert(0, (plate_only_crop, [px1c, py1c, px2c, py2c],
+                                         best_conf_v, best_vt, best_vc))
+            logger.info(f"[ANPR] OCR renforcé : {len(rf_plate_bboxes)} région(s) Roboflow injectée(s)")
 
         # Étape 2 : EasyOCR — lire le texte dans chaque crop
         for crop, bbox, veh_conf, vehicle_type, vehicle_color in vehicle_crops:

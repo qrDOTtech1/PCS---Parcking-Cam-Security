@@ -257,6 +257,32 @@
                 <div class="p-6">
                     <p class="text-sm text-gray-500 mb-4">Connectez vos modèles Roboflow pour une détection experte. Chaque modèle peut avoir ses propres règles d'alerte.</p>
 
+                    <!-- Renforcement OCR -->
+                    {% if roboflow_models %}
+                    <div class="mb-5 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+                        <div class="flex items-start gap-3">
+                            <svg class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                            <div>
+                                <p class="text-sm font-semibold text-blue-800">Renforcement OCR des plaques</p>
+                                <p class="text-xs text-blue-600 mt-0.5">Utilise Roboflow (<code class="bg-blue-100 px-1 rounded">licenta-1g8sd/2</code>) pour localiser précisément les plaques dans l'image avant l'OCR — améliore la lecture sur images complexes.</p>
+                            </div>
+                        </div>
+                        <form method="POST" action="{{ url_for('toggle_ocr_reinforcement') }}" class="ml-4 flex-shrink-0">
+                            <button type="submit" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition
+                                {% if ocr_reinforcement %}bg-blue-500 border-blue-600 text-white hover:bg-blue-600{% else %}bg-white border-blue-300 text-blue-700 hover:bg-blue-50{% endif %}">
+                                {% if ocr_reinforcement %}
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                                Activé
+                                {% else %}
+                                Désactivé
+                                {% endif %}
+                            </button>
+                        </form>
+                    </div>
+                    {% endif %}
+
                     <!-- Liste des modèles existants -->
                     {% if roboflow_models %}
                     <div class="space-y-3 mb-5">
@@ -558,21 +584,46 @@
             </div>
 
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-2">
-                <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+                <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-3">
                     <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        {% if list_mode == 'whitelist' %}
+                        <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Liste Blanche — Véhicules Autorisés
+                        {% else %}
                         <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
                         </svg>
-                        Threat Database / База угроз
+                        Liste Noire — Véhicules Suspects
+                        {% endif %}
                     </h2>
+                    <!-- Toggle Blacklist / Whitelist -->
+                    <form method="POST" action="{{ url_for('toggle_list_mode') }}">
+                        <button type="submit" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition
+                            {% if list_mode == 'whitelist' %}bg-green-50 border-green-300 text-green-700 hover:bg-green-100{% else %}bg-red-50 border-red-300 text-red-700 hover:bg-red-100{% endif %}">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+                            </svg>
+                            {% if list_mode == 'whitelist' %}Mode : Whitelist → Blacklist{% else %}Mode : Blacklist → Whitelist{% endif %}
+                        </button>
+                    </form>
                 </div>
+                {% if list_mode == 'whitelist' %}
+                <div class="mx-6 mt-4 mb-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2 text-sm text-green-800 flex items-start gap-2">
+                    <svg class="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <span><strong>Mode liste blanche actif :</strong> les plaques listées ci-dessous sont <strong>autorisées</strong>. Toute plaque reconnue <em>absente</em> de cette liste déclenchera une alerte.</span>
+                </div>
+                {% endif %}
                 <div class="p-6">
                     {% if blacklist %}
                     <div class="overflow-x-auto mb-4">
                         <table class="min-w-full divide-y divide-gray-200 text-sm">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Plate</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                        {% if list_mode == 'whitelist' %}Plaque Autorisée{% else %}Plate{% endif %}
+                                    </th>
                                     {% if subscription_mode in ['emergency','enterprise'] %}
                                     <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                                     <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Color</th>
@@ -616,7 +667,9 @@
                         </table>
                     </div>
                     {% else %}
-                    <p class="text-center text-gray-500 py-4">No rules in threat database</p>
+                    <p class="text-center text-gray-500 py-4">
+                        {% if list_mode == 'whitelist' %}Aucune plaque autorisée — toute plaque reconnue déclenchera une alerte.{% else %}Aucune règle dans la liste noire.{% endif %}
+                    </p>
                     {% endif %}
 
                     <hr class="my-4 border-gray-100">
@@ -624,7 +677,9 @@
                         <!-- Row 1: Plate + Description -->
                         <div class="flex gap-3 items-end">
                             <div class="flex-1">
-                                <label class="block text-xs font-medium text-gray-500 mb-1">Plate / Plaque</label>
+                                <label class="block text-xs font-medium text-gray-500 mb-1">
+                                    {% if list_mode == 'whitelist' %}Plaque Autorisée{% else %}Plate / Plaque{% endif %}
+                                </label>
                                 <input type="text" name="plate" placeholder="AB123CD" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm font-mono uppercase">
                             </div>
                             <div class="flex-1">

@@ -385,6 +385,17 @@ def create_tables():
             except Exception:
                 pass
 
+        # Migration: nouvelles colonnes User (list_mode, ocr_reinforcement)
+        for col, defn in [
+            ("list_mode", "VARCHAR(10) DEFAULT 'blacklist'"),
+            ("ocr_reinforcement", "INTEGER DEFAULT 0"),
+        ]:
+            try:
+                conn.execute(text(f"ALTER TABLE user ADD COLUMN {col} {defn}"))
+                conn.commit()
+            except Exception:
+                pass
+
         # Migration: nouvelles colonnes PlateDetection pour multi-modèle Roboflow + GIF
         for col, defn in [
             ("roboflow_model_name", "VARCHAR(50) DEFAULT ''"),
@@ -1294,6 +1305,9 @@ def dashboard():
 
     max_targets = get_max_notifications(user)
 
+    list_mode = getattr(user, "list_mode", "blacklist") or "blacklist"
+    ocr_reinforcement = bool(getattr(user, "ocr_reinforcement", False))
+
     return render_template(
         "dashboard.html",
         username=session["username"],
@@ -1306,6 +1320,8 @@ def dashboard():
         recent_detections=recent_detections,
         recent_alerts=recent_alerts,
         max_targets=max_targets,
+        list_mode=list_mode,
+        ocr_reinforcement=ocr_reinforcement,
     )
 
 
@@ -1821,6 +1837,31 @@ def del_blacklist(id):
         db.session.delete(bl)
         db.session.commit()
         flash("Plaque effacée.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/dashboard/settings/list_mode", methods=["POST"])
+@require_auth
+def toggle_list_mode():
+    """Bascule entre mode blacklist et whitelist pour la liste de plaques."""
+    user = User.query.get(session["user_id"])
+    current = getattr(user, "list_mode", "blacklist") or "blacklist"
+    user.list_mode = "whitelist" if current == "blacklist" else "blacklist"
+    db.session.commit()
+    mode_label = "liste blanche (autorisations)" if user.list_mode == "whitelist" else "liste noire (menaces)"
+    flash(f"Mode de liste basculé : {mode_label}.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/dashboard/settings/ocr_reinforcement", methods=["POST"])
+@require_auth
+def toggle_ocr_reinforcement():
+    """Active/désactive le renforcement OCR via Roboflow (licenta-1g8sd/2)."""
+    user = User.query.get(session["user_id"])
+    user.ocr_reinforcement = not bool(getattr(user, "ocr_reinforcement", False))
+    db.session.commit()
+    state = "activé" if user.ocr_reinforcement else "désactivé"
+    flash(f"Renforcement OCR Roboflow {state}.", "success")
     return redirect(url_for("dashboard"))
 
 

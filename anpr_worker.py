@@ -196,27 +196,50 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                         # Inference dans un vrai thread OS (eventlet.tpool)
                         from models import (
                             db,
+                            User,
                             Camera,
                             Blacklist,
                             PlateDetection,
                             RoboflowModel,
                         )
 
+                        # ── 0. Paramètres utilisateur ──
+                        user_obj = User.query.get(camera.user_id)
+                        list_mode = getattr(user_obj, "list_mode", "blacklist") or "blacklist"
+                        ocr_reinforce = bool(getattr(user_obj, "ocr_reinforcement", False))
+
+                        # ── 2. Roboflow multi-modèle (chargé avant OCR pour renforcement) ──
+                        rf_models = RoboflowModel.query.filter_by(
+                            user_id=camera.user_id, is_active=True
+                        ).all()
+
+                        # ── 0b. Renforcement OCR : localiser les plaques via Roboflow ──
+                        rf_plate_bboxes = []
+                        if ocr_reinforce and rf_models:
+                            rf_key = rf_models[0].api_key  # clé du premier modèle actif
+                            try:
+                                rf_plate_bboxes = eventlet.tpool.execute(
+                                    engine.detect_plate_regions,
+                                    frame_bytes,
+                                    rf_key,
+                                )
+                            except Exception as e:
+                                logger.warning(f"[ANPR] OCR reinforcement error: {e}")
+
                         # ── 1. YOLO + OCR (local) ──
                         try:
                             results = eventlet.tpool.execute(
-                                engine.detect_plates, frame_bytes
+                                engine.detect_plates,
+                                frame_bytes,
+                                None,
+                                None,
+                                rf_plate_bboxes if rf_plate_bboxes else None,
                             )
                         except Exception as e:
                             logger.warning(
                                 f"[ANPR Worker] Inference error cam {cam_id}: {e}"
                             )
                             continue
-
-                        # ── 2. Roboflow multi-modèle ──
-                        rf_models = RoboflowModel.query.filter_by(
-                            user_id=camera.user_id, is_active=True
-                        ).all()
 
                         rf_detections = []  # list of (rf_det_dict, RoboflowModel)
                         for rfm in rf_models:
@@ -346,10 +369,10 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
 
                             RECENT_DETECTIONS[dedup_key] = time.time()
 
-                            # --- Chercher une correspondance blacklist ---
+                            # --- Chercher correspondance dans la liste (blacklist OU whitelist) ---
                             matched_rule = None
 
-                            # 1. Correspondance par plaque (règles standard)
+                            # 1. Correspondance par plaque
                             if plate:
                                 rule = Blacklist.query.filter_by(
                                     user_id=camera.user_id,
@@ -357,7 +380,6 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                     match_plate=True,
                                 ).first()
                                 if rule:
-                                    # Vérifier aussi vehicle_type et vehicle_color si spécifiés
                                     type_ok = (
                                         not rule.vehicle_type
                                         or rule.vehicle_type == "any"
@@ -371,7 +393,7 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                     if type_ok and color_ok:
                                         matched_rule = rule
 
-                            # 2. Correspondance par type+couleur sans plaque (mode urgence)
+                            # 2. Correspondance par type+couleur sans plaque
                             if not matched_rule:
                                 type_color_rules = Blacklist.query.filter_by(
                                     user_id=camera.user_id,
@@ -388,11 +410,10 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                     )
                                     if not type_is_specific and not color_is_specific:
                                         logger.warning(
-                                            f"[ANPR] Règle blacklist #{rule.id} ignorée "
-                                            f"(match_plate=False sans critère spécifique — wildcard)"
+                                            f"[ANPR] Règle #{rule.id} ignorée "
+                                            f"(match_plate=False sans critère spécifique)"
                                         )
                                         continue
-
                                     type_ok = (
                                         not type_is_specific
                                         or rule.vehicle_type == veh_type
@@ -405,7 +426,17 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                         matched_rule = rule
                                         break
 
-                            is_threat = matched_rule is not None
+                            # 3. Décider si c'est une menace selon le mode de liste
+                            if list_mode == "whitelist":
+                                # Whitelist : une correspondance = véhicule AUTORISÉ → pas de menace
+                                # Pas de correspondance + plaque lue = véhicule NON AUTORISÉ → menace
+                                is_threat = (plate is not None) and (matched_rule is None)
+                                # Pas de plaque lue = on ne peut pas dire → pas d'alerte
+                                if plate is None:
+                                    is_threat = False
+                            else:
+                                # Blacklist (défaut) : correspondance = menace
+                                is_threat = matched_rule is not None
 
                             # ── Roboflow per-model alert logic ──
                             rf_alert = False
@@ -485,9 +516,14 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                 f"{' rf=' + rf_class + '(' + rf_model_name + ')' if rf_class else ''}"
                             )
 
-                            # Alerte si blacklisté OU alerte Roboflow
+                            # Alerte si menace (blacklist/whitelist) OU alerte Roboflow
                             if is_threat or rf_alert:
-                                if matched_rule:
+                                if list_mode == "whitelist" and is_threat and not matched_rule:
+                                    # Whitelist : plaque inconnue = non autorisée
+                                    label = "Véhicule Non Autorisé"
+                                    priority = "normal"
+                                    reason = f"Plaque '{plate}' absente de la liste blanche"
+                                elif matched_rule and list_mode == "blacklist":
                                     label = (
                                         matched_rule.alert_label or "Véhicule Suspect"
                                     ).strip()
@@ -500,7 +536,7 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                 else:
                                     label = "Véhicule Suspect"
                                     priority = "normal"
-                                    reason = "Correspondance blacklist"
+                                    reason = "Correspondance liste"
 
                                 priority_icon = {
                                     "critical": "🔴",
