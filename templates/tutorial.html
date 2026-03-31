@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PCS — Guide de déploiement</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #0f0f0f; color: #e5e7eb; }
+        .chapter-card { border-left: 4px solid; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .step-num {
+            font-size: 5rem;
+            font-weight: 800;
+            line-height: 1;
+            opacity: 0.07;
+            position: absolute;
+            top: -0.5rem;
+            right: 1rem;
+            pointer-events: none;
+            user-select: none;
+        }
+        .highlight { background: linear-gradient(90deg, #facc15 0%, #f97316 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .code-block {
+            background: #1e1e2e;
+            border: 1px solid #2e2e3e;
+            border-radius: 0.5rem;
+            padding: 1rem 1.25rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+            color: #a6e3a1;
+            overflow-x: auto;
+            white-space: pre;
+        }
+        .tag { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+        details > summary { cursor: pointer; list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+        details[open] summary .chevron { transform: rotate(180deg); }
+        .chevron { transition: transform 0.2s; }
+        .warning-box {
+            background: rgba(234,179,8,0.08);
+            border: 1px solid rgba(234,179,8,0.3);
+            border-left: 4px solid #eab308;
+        }
+        .tip-box {
+            background: rgba(99,102,241,0.08);
+            border: 1px solid rgba(99,102,241,0.3);
+            border-left: 4px solid #6366f1;
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1a1a1a; }
+        ::-webkit-scrollbar-thumb { background: #3f3f5f; border-radius: 3px; }
+        html { scroll-behavior: smooth; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- Header spectaculaire -->
+    <div class="bg-gradient-to-br from-gray-900 via-slate-900 to-gray-950 border-b border-gray-800">
+        <div class="max-w-4xl mx-auto px-6 py-14 text-center">
+            <a href="/login">
+                <img src="/static/img/PCS_wordmark_logo.svg" alt="PCS" class="h-14 w-auto mx-auto mb-8 opacity-90">
+            </a>
+            <h1 class="text-4xl sm:text-5xl font-black tracking-tight mb-4">
+                Le Guide <span class="highlight">Définitif</span>
+            </h1>
+            <p class="text-xl text-gray-400 max-w-2xl mx-auto leading-relaxed">
+                Parce qu'un système de surveillance qui ne fonctionne pas, c'est exactement aussi utile
+                qu'un détecteur de fumée sans pile. Ce guide va régler ça.
+                <strong class="text-gray-200">Maintenant.</strong>
+            </p>
+            <p class="mt-6 text-sm text-gray-600 italic">
+                "La simplicité est la sophistication ultime — à condition que quelqu'un ait eu la décence de tout configurer correctement au préalable."
+            </p>
+            <!-- Nav rapide -->
+            <div class="flex flex-wrap justify-center gap-2 mt-8">
+                <a href="#ch1" class="px-3 py-1.5 rounded-lg bg-blue-900/40 border border-blue-700/40 text-blue-300 text-xs font-semibold hover:bg-blue-800/50 transition">① Déploiement</a>
+                <a href="#ch2" class="px-3 py-1.5 rounded-lg bg-purple-900/40 border border-purple-700/40 text-purple-300 text-xs font-semibold hover:bg-purple-800/50 transition">② Admin</a>
+                <a href="#ch3" class="px-3 py-1.5 rounded-lg bg-green-900/40 border border-green-700/40 text-green-300 text-xs font-semibold hover:bg-green-800/50 transition">③ Roboflow</a>
+                <a href="#ch4" class="px-3 py-1.5 rounded-lg bg-amber-900/40 border border-amber-700/40 text-amber-300 text-xs font-semibold hover:bg-amber-800/50 transition">④ PCS Cam v1</a>
+                <a href="#ch5" class="px-3 py-1.5 rounded-lg bg-red-900/40 border border-red-700/40 text-red-300 text-xs font-semibold hover:bg-red-800/50 transition">⑤ Utilisation</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 py-12 space-y-10">
+
+        <!-- ═══════════════════════════════════════════════════════ CHAPITRE 1 -->
+        <section id="ch1">
+            <div class="flex items-center gap-3 mb-6">
+                <span class="tag bg-blue-900 text-blue-300 border border-blue-700">Chapitre 1</span>
+                <div class="flex-1 h-px bg-blue-900/40"></div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden chapter-card" style="border-left-color:#3b82f6;">
+                <div class="relative px-7 py-8">
+                    <span class="step-num text-blue-500">01</span>
+                    <h2 class="text-2xl font-black text-white mb-1">Du code source à Internet</h2>
+                    <p class="text-blue-400 text-sm font-semibold uppercase tracking-widest mb-6">Récupérer PCS &amp; le déployer sur Railway</p>
+
+                    <p class="text-gray-300 leading-relaxed mb-6">
+                        Alors. Vous voulez déployer un système de surveillance digne de ce nom. Bien.
+                        Parce que laisser votre parking sans surveillance, c'est une invitation ouverte à tout ce que
+                        la société produit de moins reluisant. Commençons par le commencement — récupérer le code.
+                    </p>
+
+                    <!-- Étape 1.1 -->
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">1</span>
+                            <h3 class="font-bold text-white">Trouver le dépôt de code</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Rendez-vous sur GitHub. Cherchez simplement <code class="mono text-yellow-400 bg-gray-800 px-2 py-0.5 rounded font-semibold">PCSPARKINGCAMERAV1</code> dans la barre de recherche.
+                            C'est le seul résultat qui compte. Cliquez dessus. Regardez le dépôt.
+                            Admirez-le une seconde. Puis forkez-le sur votre propre compte —
+                            vous en aurez besoin pour la suite.
+                        </p>
+                        <div class="tip-box rounded-lg p-3 ml-8 text-xs text-indigo-300">
+                            <strong class="text-indigo-200">Note :</strong> Un "fork" crée votre propre copie du projet. Railway en aura besoin pour déployer depuis votre dépôt. Pas de panique — c'est un bouton vert, vous ne pouvez pas le rater.
+                        </div>
+                    </div>
+
+                    <!-- Étape 1.2 -->
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">2</span>
+                            <h3 class="font-bold text-white">Créer un compte Railway</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Rendez-vous sur <span class="mono text-yellow-400 font-semibold">railway.app</span> et créez un compte.
+                            Maintenant, voici la partie que personne n'aime entendre : <strong class="text-white">vous aurez besoin d'un plan payant</strong>.
+                            Le plan gratuit de Railway a des limitations qui rendront PCS aussi réactif qu'un fonctionnaire un vendredi après-midi.
+                            Souscrivez au moins au plan <strong class="text-yellow-400">Hobby</strong> (~5$/mois).
+                            Pour ce que ça fait, c'est le meilleur investissement que vous ferez cette année.
+                        </p>
+                        <div class="warning-box rounded-lg p-3 ml-8 text-xs text-yellow-300">
+                            <strong class="text-yellow-200">⚠ Important :</strong> Sans plan payant, votre instance PCS s'endormira et manquera des détections critiques. Ce n'est pas une suggestion — c'est un fait.
+                        </div>
+                    </div>
+
+                    <!-- Étape 1.3 -->
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">3</span>
+                            <h3 class="font-bold text-white">Déployer depuis GitHub</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Dans Railway : <strong class="text-white">New Project → Deploy from GitHub repo</strong>.
+                            Sélectionnez votre fork de PCSPARKINGCAMERAV1.
+                            Railway va détecte automatiquement le <code class="mono text-green-400 bg-gray-800 px-1.5 py-0.5 rounded text-xs">Procfile</code> et construire l'image.
+                            Laissez-le faire. Ne touchez à rien. Il sait ce qu'il fait.
+                        </p>
+                    </div>
+
+                    <!-- Étape 1.4 -->
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">4</span>
+                            <h3 class="font-bold text-white">Configurer les variables d'environnement</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Dans votre service Railway, allez dans l'onglet <strong class="text-white">Variables</strong>.
+                            Ajoutez les variables suivantes. Sans elles, PCS tournera, mais comme un moteur sans huile — brièvement, puis dramatiquement.
+                        </p>
+                        <div class="code-block ml-8 text-xs">SECRET_KEY        = une-longue-chaine-aleatoire-ultra-secrete
+MASTER_KEY        = votre-cle-administrateur-pcs
+DATABASE_URL      = (ajoutée automatiquement si vous liez un plugin SQLite/Postgres)
+FLASK_SECRET_KEY  = une-autre-chaine-aleatoire-differente</div>
+                        <div class="tip-box rounded-lg p-3 ml-8 mt-3 text-xs text-indigo-300">
+                            <strong class="text-indigo-200">Astuce :</strong> Ajoutez un plugin <strong>Railway Volume</strong> pour la persistance du fichier SQLite. Sans ça, vos données disparaîtront à chaque redéploiement. Ce serait tragique.
+                        </div>
+                    </div>
+
+                    <!-- Étape 1.5 -->
+                    <div>
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">5</span>
+                            <h3 class="font-bold text-white">Générer un domaine et vérifier</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8">
+                            Onglet <strong class="text-white">Settings → Domains</strong> → Generate Domain.
+                            Railway vous donne une URL en <code class="mono text-green-400 bg-gray-800 px-1.5 py-0.5 rounded text-xs">.railway.app</code>.
+                            Cliquez dessus. Si vous voyez la page de connexion PCS, félicitations —
+                            vous venez de déployer un système de surveillance professionnel en moins de dix minutes.
+                            Prenez un moment pour apprécier votre propre efficacité.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════════════════ CHAPITRE 2 -->
+        <section id="ch2">
+            <div class="flex items-center gap-3 mb-6">
+                <span class="tag bg-purple-900 text-purple-300 border border-purple-700">Chapitre 2</span>
+                <div class="flex-1 h-px bg-purple-900/40"></div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden chapter-card" style="border-left-color:#a855f7;">
+                <div class="relative px-7 py-8">
+                    <span class="step-num text-purple-500">02</span>
+                    <h2 class="text-2xl font-black text-white mb-1">L'outil administrateur</h2>
+                    <p class="text-purple-400 text-sm font-semibold uppercase tracking-widest mb-6">Créer des comptes &amp; gérer les abonnements</p>
+
+                    <p class="text-gray-300 leading-relaxed mb-6">
+                        Vous êtes maintenant, techniquement parlant, le maître absolu de votre instance PCS.
+                        Un grand pouvoir implique une grande responsabilité. Ou du moins, un mot de passe solide.
+                        L'Admin Tool est l'endroit où vous créez les comptes utilisateurs et définissez ce qu'ils ont le droit de faire.
+                    </p>
+
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-purple-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">1</span>
+                            <h3 class="font-bold text-white">Accéder au panneau admin</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Naviguez vers <code class="mono text-yellow-400 bg-gray-800 px-2 py-0.5 rounded">/admin</code> sur votre instance.
+                            Entrez votre <code class="mono text-yellow-400">MASTER_KEY</code> — celle que vous avez définie dans les variables Railway.
+                            Vous voilà dans le saint des saints. Ne faites pas n'importe quoi.
+                        </p>
+                    </div>
+
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-purple-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">2</span>
+                            <h3 class="font-bold text-white">Créer un compte utilisateur</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Section <strong class="text-white">"Créer un utilisateur"</strong> — remplissez le nom d'utilisateur et le mot de passe.
+                            Maintenant vient la partie intéressante : choisissez un <strong class="text-purple-300">mode d'abonnement</strong>.
+                        </p>
+                        <div class="ml-8 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                            <div class="bg-gray-800 border border-gray-700 rounded-lg p-3">
+                                <p class="font-bold text-white mb-1">Standard</p>
+                                <p class="text-gray-400">3 caméras max, détection de base, notifications. Parfait pour débuter.</p>
+                            </div>
+                            <div class="bg-gray-800 border border-purple-800 rounded-lg p-3">
+                                <p class="font-bold text-purple-300 mb-1">Emergency</p>
+                                <p class="text-gray-400">Règles avancées type/couleur, priorités d'alerte, filtres fins.</p>
+                            </div>
+                            <div class="bg-gray-800 border border-yellow-800 rounded-lg p-3">
+                                <p class="font-bold text-yellow-300 mb-1">Enterprise</p>
+                                <p class="text-gray-400">Tout illimité. Caméras, règles, modèles IA, notifications. Le nec plus ultra.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-purple-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">3</span>
+                            <h3 class="font-bold text-white">Gérer les utilisateurs existants</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8">
+                            Le tableau de bord admin liste tous les comptes. Vous pouvez modifier le nombre max de caméras,
+                            changer l'abonnement, ajouter des notes internes, ou supprimer un compte si quelqu'un
+                            a eu l'audace d'utiliser "12345" comme mot de passe malgré vos avertissements répétés.
+                            Le bouton rouge est là pour ça.
+                        </p>
+                    </div>
+
+                    <div class="warning-box rounded-lg p-4 text-sm text-yellow-300">
+                        <strong class="text-yellow-200 block mb-1">⚠ Ne perdez jamais votre MASTER_KEY</strong>
+                        Sans elle, vous ne pouvez plus accéder au panneau admin. Il n'y a pas de "mot de passe oublié" pour le Bon Dieu de l'instance. Vous devrez redéployer depuis zéro. Ce sera pénible. Notez-la quelque part de sûr.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════════════════ CHAPITRE 3 -->
+        <section id="ch3">
+            <div class="flex items-center gap-3 mb-6">
+                <span class="tag bg-green-900 text-green-300 border border-green-700">Chapitre 3</span>
+                <div class="flex-1 h-px bg-green-900/40"></div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden chapter-card" style="border-left-color:#22c55e;">
+                <div class="relative px-7 py-8">
+                    <span class="step-num text-green-500">03</span>
+                    <h2 class="text-2xl font-black text-white mb-1">Intelligence Artificielle</h2>
+                    <p class="text-green-400 text-sm font-semibold uppercase tracking-widest mb-6">Roboflow — Clé API &amp; modèles de détection</p>
+
+                    <p class="text-gray-300 leading-relaxed mb-6">
+                        La détection YOLO intégrée est déjà remarquable. Mais si vous voulez que PCS reconnaisse
+                        des choses spécifiques — disons, un modèle particulier de véhicule, une tenue suspecte,
+                        ou n'importe quelle autre classe visuelle que vous imaginez —
+                        alors Roboflow est votre meilleur ami. Un ami qui vous demandera une clé API, mais un ami quand même.
+                    </p>
+
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-green-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">1</span>
+                            <h3 class="font-bold text-white">Créer un compte Roboflow</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8">
+                            Rendez-vous sur <code class="mono text-yellow-400 bg-gray-800 px-2 py-0.5 rounded">roboflow.com</code> et créez un compte.
+                            Gratuit pour commencer — vous aurez accès aux modèles publics de l'univers,
+                            ce qui représente une quantité absurde d'intelligence artificielle pré-entraînée.
+                            C'est franchement indécent comme générosité.
+                        </p>
+                    </div>
+
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-green-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">2</span>
+                            <h3 class="font-bold text-white">Récupérer votre clé API</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Dans votre compte Roboflow, allez dans <strong class="text-white">Settings → Roboflow API</strong>.
+                            Vous y trouverez votre clé API privée. Copiez-la.
+                            C'est une longue suite de caractères apparemment aléatoires. Elle l'est.
+                            C'est votre sésame vers les cerveaux électroniques de Roboflow.
+                        </p>
+                        <div class="warning-box rounded-lg p-3 ml-8 text-xs text-yellow-300">
+                            <strong class="text-yellow-200">⚠ Ne partagez jamais votre clé API</strong> — c'est votre quota de calcul. Si quelqu'un d'autre l'utilise, vous payez la facture.
+                        </div>
+                    </div>
+
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-green-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">3</span>
+                            <h3 class="font-bold text-white">Trouver des modèles pertinents</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Sur Roboflow, allez dans l'onglet <strong class="text-white">Universe</strong> — c'est la bibliothèque publique.
+                            Cherchez ce dont vous avez besoin : <em class="text-gray-300">"license plate"</em>, <em class="text-gray-300">"person detection"</em>,
+                            <em class="text-gray-300">"suspicious behavior"</em>... Les possibilités sont quasiment infinies.
+                        </p>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Sur la page d'un modèle, notez l'<strong class="text-white">endpoint</strong> — il ressemble à ceci :
+                        </p>
+                        <div class="code-block ml-8 text-xs">nom-du-modele/version    <span style="color:#6c7086;">// ex : police-detector/1</span></div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mt-3">
+                            C'est ce que vous saisirez dans PCS. Notez-le.
+                        </p>
+                    </div>
+
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-green-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">4</span>
+                            <h3 class="font-bold text-white">Ajouter le modèle dans PCS</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Dans votre tableau de bord PCS, section <strong class="text-white">Modèles IA (Roboflow)</strong> — cliquez sur le formulaire d'ajout.
+                            Renseignez un nom descriptif, l'endpoint du modèle et votre clé API.
+                            Choisissez ensuite le comportement d'alerte :
+                        </p>
+                        <div class="ml-8 space-y-2 text-xs">
+                            <div class="flex items-start gap-2 bg-gray-800 rounded-lg p-2.5">
+                                <span class="tag bg-green-900 text-green-300 mt-0.5">Log only</span>
+                                <p class="text-gray-400">Enregistre les détections silencieusement. Aucune alerte. Parfait pour tester ou observer.</p>
+                            </div>
+                            <div class="flex items-start gap-2 bg-gray-800 rounded-lg p-2.5">
+                                <span class="tag bg-red-900 text-red-300 mt-0.5">Alerte tout</span>
+                                <p class="text-gray-400">Alerte à chaque détection du modèle. Pour les cas où vous voulez être notifié de tout ce que l'IA voit.</p>
+                            </div>
+                            <div class="flex items-start gap-2 bg-gray-800 rounded-lg p-2.5">
+                                <span class="tag bg-blue-900 text-blue-300 mt-0.5">Par classes</span>
+                                <p class="text-gray-400">N'alerte que sur certaines classes du modèle. Le bouton "Récupérer classes" les charge automatiquement.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tip-box rounded-lg p-4 text-sm text-indigo-300">
+                        <strong class="text-indigo-200 block mb-1">💡 Renforcement OCR</strong>
+                        Si vous avez un modèle Roboflow configuré, activez le <strong>Renforcement OCR</strong> dans la section dédiée.
+                        PCS utilisera Roboflow pour localiser précisément les plaques dans l'image avant de les lire —
+                        la précision de reconnaissance s'en trouve considérablement améliorée.
+                        C'est la différence entre lire un panneau de route à 130 km/h et à l'arrêt.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════════════════ CHAPITRE 4 -->
+        <section id="ch4">
+            <div class="flex items-center gap-3 mb-6">
+                <span class="tag bg-amber-900 text-amber-300 border border-amber-700">Chapitre 4</span>
+                <div class="flex-1 h-px bg-amber-900/40"></div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden chapter-card" style="border-left-color:#f59e0b;">
+                <div class="relative px-7 py-8">
+                    <span class="step-num text-amber-500">04</span>
+                    <h2 class="text-2xl font-black text-white mb-1">La PCS Cam v1</h2>
+                    <p class="text-amber-400 text-sm font-semibold uppercase tracking-widest mb-6">Configuration de la caméra dédiée PCS</p>
+
+                    <p class="text-gray-300 leading-relaxed mb-6">
+                        La PCS Cam v1 est une petite merveille d'ingénierie embarquée.
+                        Un minuscule module caméra connecté en WiFi, capable de streamer en direct,
+                        d'enregistrer des segments vidéo et de répondre à vos commandes à la milliseconde.
+                        Elle tient dans votre paume et coûte moins cher qu'un repas au restaurant.
+                        Voici comment la mettre en service.
+                    </p>
+
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-amber-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">1</span>
+                            <h3 class="font-bold text-white">Flasher le firmware</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            La PCS Cam v1 est livrée — ou se programme — avec un firmware spécifique PCS.
+                            Utilisez l'outil de flashage fourni avec le module (via USB).
+                            Le processus prend environ 30 secondes. Si ça prend plus longtemps, quelque chose s'est mal passé.
+                            Recommencez.
+                        </p>
+                    </div>
+
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-amber-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">2</span>
+                            <h3 class="font-bold text-white">Ajouter la caméra dans PCS</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Dans votre tableau de bord PCS, cliquez sur <strong class="text-white">Ajouter une caméra</strong>.
+                            Donnez-lui un nom évocateur — "Entrée Parking", "Sortie Nord", peu importe,
+                            mais pas "caméra1" s'il vous plaît, vous méritez mieux que ça.
+                            Définissez une clé API unique pour ce capteur — c'est son identité sur votre réseau PCS.
+                        </p>
+                        <div class="code-block ml-8 text-xs">Nom      : Entrée Parking Nord
+Clé API  : pcscam-entree-nord-2024   <span style="color:#6c7086;">// inventez quelque chose de mémorable</span></div>
+                    </div>
+
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-amber-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">3</span>
+                            <h3 class="font-bold text-white">Configurer le WiFi de la caméra</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Au premier démarrage, la PCS Cam v1 crée son propre point d'accès WiFi temporaire.
+                            Connectez-vous à ce réseau depuis votre téléphone ou PC — vous trouverez une interface
+                            de configuration à l'adresse <code class="mono text-yellow-400 bg-gray-800 px-1.5 py-0.5 rounded text-xs">192.168.4.1</code>.
+                            Renseignez :
+                        </p>
+                        <div class="code-block ml-8 text-xs">SSID WiFi    : votre-réseau-local
+Mot de passe : votre-mot-de-passe-wifi
+PCS Server   : https://votre-instance.railway.app
+API Key      : pcscam-entree-nord-2024   <span style="color:#6c7086;">// la clé définie à l'étape précédente</span></div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mt-3">
+                            Sauvegardez. La caméra redémarre, se connecte à votre WiFi et contacte PCS.
+                            Dans votre tableau de bord, elle apparaît en ligne — le petit point vert pulse.
+                            C'est satisfaisant. Vraiment.
+                        </p>
+                    </div>
+
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-amber-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">4</span>
+                            <h3 class="font-bold text-white">Positionner la caméra</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8">
+                            La PCS Cam v1 fonctionne mieux à <strong class="text-white">hauteur de plaque</strong> ou légèrement au-dessus,
+                            avec un angle qui capte les véhicules de face ou de trois quarts.
+                            Évitez le contre-jour direct. Assurez-vous d'avoir du WiFi à l'emplacement choisi —
+                            une caméra sans signal, c'est une sculpture moderne coûteuse.
+                            Fixez-la solidement. Les vibrations sont l'ennemi de la lecture de plaques.
+                        </p>
+                    </div>
+
+                    <div>
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-amber-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">5</span>
+                            <h3 class="font-bold text-white">Vérifier le flux en direct</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8">
+                            Cliquez sur votre caméra dans le dashboard PCS. Vous devriez voir le flux MJPEG en direct.
+                            Si l'image est floue, ajustez la mise au point (petite vis sur l'objectif).
+                            Si l'image est noire, la caméra est peut-être dans sa poche. Vérifiez.
+                            Ça arrive.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════════════════ CHAPITRE 5 -->
+        <section id="ch5">
+            <div class="flex items-center gap-3 mb-6">
+                <span class="tag bg-red-900 text-red-300 border border-red-700">Chapitre 5</span>
+                <div class="flex-1 h-px bg-red-900/40"></div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden chapter-card" style="border-left-color:#ef4444;">
+                <div class="relative px-7 py-8">
+                    <span class="step-num text-red-500">05</span>
+                    <h2 class="text-2xl font-black text-white mb-1">Configuration finale &amp; Utilisation</h2>
+                    <p class="text-red-400 text-sm font-semibold uppercase tracking-widest mb-6">Listes, alertes, notifications — le grand final</p>
+
+                    <p class="text-gray-300 leading-relaxed mb-6">
+                        Votre instance tourne. Vos caméras streament. Roboflow analyse en arrière-plan.
+                        Il ne reste plus qu'à dire à PCS <em>exactement</em> ce qui vous intéresse.
+                        C'est là que la puissance du système se révèle dans toute sa splendeur.
+                    </p>
+
+                    <!-- Listes -->
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-red-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">1</span>
+                            <h3 class="font-bold text-white">Configurer votre liste de plaques</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            PCS supporte deux modes radicalement différents dans la section <strong class="text-white">Liste de plaques</strong> :
+                        </p>
+                        <div class="ml-8 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mb-3">
+                            <div class="bg-gray-800 border border-red-900 rounded-lg p-3">
+                                <p class="font-bold text-red-300 mb-1">🚫 Liste Noire (défaut)</p>
+                                <p class="text-gray-400">Les plaques listées déclenchent une alerte. Tout le reste passe sans bruit. Idéal pour surveiller des véhicules spécifiques.</p>
+                            </div>
+                            <div class="bg-gray-800 border border-green-900 rounded-lg p-3">
+                                <p class="font-bold text-green-300 mb-1">✅ Liste Blanche</p>
+                                <p class="text-gray-400">Les plaques listées sont autorisées. Toute plaque inconnue déclenche une alerte. Parfait pour un accès contrôlé.</p>
+                            </div>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8">
+                            Basculez entre les deux modes via le bouton dans l'en-tête de la section.
+                            Ajoutez des plaques, donnez-leur une description parlante ("Client VIP", "Résident Bât. A"),
+                            et définissez une priorité si nécessaire.
+                        </p>
+                    </div>
+
+                    <!-- Notifications -->
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-red-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">2</span>
+                            <h3 class="font-bold text-white">Configurer les notifications</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8 mb-3">
+                            Section <strong class="text-white">Notifications</strong> du dashboard. PCS supporte plusieurs canaux :
+                        </p>
+                        <div class="ml-8 space-y-2 text-xs">
+                            <div class="bg-gray-800 rounded-lg p-2.5 flex items-start gap-2">
+                                <span class="tag bg-blue-900 text-blue-300 mt-0.5">Telegram</span>
+                                <p class="text-gray-400">Le plus fiable. Créez un bot via <strong class="text-gray-300">@BotFather</strong>, récupérez le token, notez votre Chat ID. Les alertes arrivent instantanément.</p>
+                            </div>
+                            <div class="bg-gray-800 rounded-lg p-2.5 flex items-start gap-2">
+                                <span class="tag bg-green-900 text-green-300 mt-0.5">Signal</span>
+                                <p class="text-gray-400">Via CallMeBot. Configurez une fois, notifications chiffrées à vie.</p>
+                            </div>
+                            <div class="bg-gray-800 rounded-lg p-2.5 flex items-start gap-2">
+                                <span class="tag bg-orange-900 text-orange-300 mt-0.5">Webhook</span>
+                                <p class="text-gray-400">Pour les intégrations custom. Tout système qui accepte un POST HTTP peut recevoir vos alertes PCS.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Lecture quotidienne -->
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-red-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">3</span>
+                            <h3 class="font-bold text-white">Utiliser le tableau de bord au quotidien</h3>
+                        </div>
+                        <div class="ml-8 text-sm space-y-3 text-gray-400 leading-relaxed">
+                            <p>L'<strong class="text-white">Historique</strong> liste tous les passages détectés — plaque, type de véhicule, couleur, modèle IA utilisé et statut menace. Filtrez par tout, date, type, caméra. Téléchargez les GIFs d'alerte directement depuis le tableau.</p>
+                            <p>La page <strong class="text-white">Caméra</strong> (clic sur une caméra) vous donne le flux live, les <strong class="text-white">enregistrements ESP32</strong> (liste + lecture + téléchargement), l'<strong class="text-white">historique des connexions</strong> de la caméra, et le <strong class="text-white">cache local d'alertes</strong> (500 Mo par caméra, nettoyable en un clic).</p>
+                            <p>Les <strong class="text-white">alertes en temps réel</strong> s'affichent sur le dashboard via une bannière rouge — et dans votre appli de messagerie en simultané.</p>
+                        </div>
+                    </div>
+
+                    <!-- Gestion avancée -->
+                    <div class="mb-7">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-6 h-6 rounded-full bg-red-600 text-white text-xs font-black flex items-center justify-center flex-shrink-0">4</span>
+                            <h3 class="font-bold text-white">Maintenance et nettoyage</h3>
+                        </div>
+                        <p class="text-gray-400 text-sm leading-relaxed ml-8">
+                            Les GIFs d'alerte globaux sont nettoyés automatiquement après 7 jours.
+                            Le cache par caméra est limité à 500 Mo — les plus anciens fichiers sont supprimés automatiquement.
+                            Vous pouvez forcer le nettoyage depuis la page de chaque caméra.
+                            L'historique de détections peut être effacé par caméra depuis la page dédiée.
+                            PCS gère son espace. Vous n'avez à vous soucier de rien.
+                        </p>
+                    </div>
+
+                    <!-- Bombshell final -->
+                    <div class="bg-gradient-to-r from-red-900/30 to-orange-900/20 border border-red-800/40 rounded-xl p-5 text-center mt-8">
+                        <p class="text-2xl font-black text-white mb-2">Et voilà. C'est fait.</p>
+                        <p class="text-gray-400 text-sm leading-relaxed max-w-xl mx-auto">
+                            Vous venez de déployer un système de surveillance intelligent, temps réel,
+                            avec détection de plaques par IA, alertes multi-canaux et enregistrement automatique.
+                            Des solutions similaires coûtent des milliers d'euros par an.
+                            La vôtre tourne sur Railway pour quelques dollars par mois.
+                            <strong class="text-white">Sur ce, bonne surveillance.</strong>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <div class="text-center py-8 space-y-2">
+            <a href="/login" class="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition shadow-lg shadow-blue-900/30">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/></svg>
+                Se connecter à PCS
+            </a>
+            <p class="text-gray-600 text-xs mt-3">
+                <a href="/terms" class="hover:text-gray-400 transition underline">Conditions d'utilisation</a>
+                &nbsp;·&nbsp; ParkingCamSecurity &copy; 2026
+            </p>
+        </div>
+
+    </div>
+
+</body>
+</html>

@@ -1285,6 +1285,11 @@ def terms():
     return render_template("terms.html")
 
 
+@app.route("/tutorial")
+def tutorial():
+    return render_template("tutorial.html")
+
+
 @app.route("/login", methods=["GET", "POST"])
 @limiter.limit("20 per minute")
 def login():
