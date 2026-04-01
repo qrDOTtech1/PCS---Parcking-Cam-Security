@@ -388,7 +388,11 @@ def create_tables():
 
         # Migration: camera_type sur camera
         try:
-            conn.execute(text("ALTER TABLE camera ADD COLUMN camera_type VARCHAR(20) DEFAULT 'generic'"))
+            conn.execute(
+                text(
+                    "ALTER TABLE camera ADD COLUMN camera_type VARCHAR(20) DEFAULT 'generic'"
+                )
+            )
             conn.commit()
         except Exception:
             pass
@@ -545,7 +549,7 @@ def upload_image():
 
                 if blacklisted:
                     threat = True
-                    alert_msg = f"🚨 ALERTE PCS 🚨\nVéhicule Suspect!\nPlaque: {normalized_read}\nCaméra: {camera.name}\nRaison: {blacklisted.description}"
+                    alert_msg = f"🚨 ALERTE NOVASECURITY 🚨\nVéhicule Suspect!\nPlaque: {normalized_read}\nCaméra: {camera.name}\nRaison: {blacklisted.description}"
                     send_alert(user_id, alert_msg)
                     socketio.emit(
                         "threat_alert",
@@ -1287,7 +1291,7 @@ def terms():
 
 @app.route("/tutorial")
 def tutorial():
-    return render_template("tutorial.html")
+    return redirect(url_for("login"))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -1440,19 +1444,27 @@ def camera_view(camera_id):
 
     # Cache local alertes (static/cam_cache/<camera_id>/)
     import glob as glob_mod
+
     cam_cache_dir = os.path.join(app.root_path, "static", "cam_cache", str(camera_id))
     cache_files = []
     cache_total_bytes = 0
     if os.path.isdir(cam_cache_dir):
-        for f in sorted(glob_mod.glob(os.path.join(cam_cache_dir, "*.gif")),
-                        key=os.path.getmtime, reverse=True):
+        for f in sorted(
+            glob_mod.glob(os.path.join(cam_cache_dir, "*.gif")),
+            key=os.path.getmtime,
+            reverse=True,
+        ):
             sz = os.path.getsize(f)
             cache_total_bytes += sz
-            cache_files.append({
-                "name": os.path.basename(f),
-                "size_kb": round(sz / 1024, 1),
-                "mtime": datetime.utcfromtimestamp(os.path.getmtime(f)).strftime("%d/%m %H:%M"),
-            })
+            cache_files.append(
+                {
+                    "name": os.path.basename(f),
+                    "size_kb": round(sz / 1024, 1),
+                    "mtime": datetime.utcfromtimestamp(os.path.getmtime(f)).strftime(
+                        "%d/%m %H:%M"
+                    ),
+                }
+            )
     cache_total_mb = round(cache_total_bytes / (1024 * 1024), 1)
 
     return render_template(
@@ -1504,6 +1516,7 @@ def clean_camera_cache(camera_id):
         flash("Caméra non trouvée.", "error")
         return redirect(url_for("dashboard"))
     import glob as glob_mod
+
     cam_cache_dir = os.path.join(app.root_path, "static", "cam_cache", str(camera_id))
     count = 0
     if os.path.isdir(cam_cache_dir):
@@ -1525,9 +1538,12 @@ def serve_cache_gif(camera_id, filename):
     if not cam:
         return "Not found", 404
     import re as _re
-    if not _re.match(r'^[\w.\-]+$', filename):
+
+    if not _re.match(r"^[\w.\-]+$", filename):
         return "Bad filename", 400
-    gif_path = os.path.join(app.root_path, "static", "cam_cache", str(camera_id), filename)
+    gif_path = os.path.join(
+        app.root_path, "static", "cam_cache", str(camera_id), filename
+    )
     if not os.path.exists(gif_path):
         return "Not found", 404
     return send_file(gif_path, mimetype="image/gif")
@@ -1557,6 +1573,7 @@ def cleanup_gifs():
         flash("Aucun GIF à nettoyer.", "success")
         return redirect(url_for("dashboard"))
     import glob as glob_mod
+
     now = time.time()
     count = 0
     for gif_file in glob_mod.glob(os.path.join(gif_dir, "*.gif")):
@@ -1585,15 +1602,21 @@ def roboflow_fetch_classes(model_id):
     url = f"https://api.roboflow.com/{endpoint}?api_key={api_key}"
 
     import subprocess
+
     try:
         result = subprocess.run(
             ["curl", "-s", "-m", "8", "-X", "GET", url],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode != 0 or not result.stdout:
-            return jsonify({"error": "Échec de la requête Roboflow", "detail": result.stderr[:200]}), 502
+            return jsonify(
+                {"error": "Échec de la requête Roboflow", "detail": result.stderr[:200]}
+            ), 502
 
         import json
+
         data = json.loads(result.stdout)
 
         # Roboflow renvoie les classes dans différents champs selon l'endpoint
@@ -1642,15 +1665,19 @@ def roboflow_fetch_classes_preview():
     url = f"https://api.roboflow.com/{endpoint}?api_key={api_key}"
 
     import subprocess
+
     try:
         result = subprocess.run(
             ["curl", "-s", "-m", "8", "-X", "GET", url],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode != 0 or not result.stdout:
             return jsonify({"error": "Échec de la requête"}), 502
 
         import json
+
         data = json.loads(result.stdout)
         classes = []
         if "classes" in data:
@@ -1986,7 +2013,11 @@ def toggle_list_mode():
     current = getattr(user, "list_mode", "blacklist") or "blacklist"
     user.list_mode = "whitelist" if current == "blacklist" else "blacklist"
     db.session.commit()
-    mode_label = "liste blanche (autorisations)" if user.list_mode == "whitelist" else "liste noire (menaces)"
+    mode_label = (
+        "liste blanche (autorisations)"
+        if user.list_mode == "whitelist"
+        else "liste noire (menaces)"
+    )
     flash(f"Mode de liste basculé : {mode_label}.", "success")
     return redirect(url_for("dashboard"))
 

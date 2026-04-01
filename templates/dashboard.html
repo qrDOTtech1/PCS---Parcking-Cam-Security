@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ParkingCamSecurity (PCS) - Dashboard</title>
+    <title>NovaSecurity - Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -56,12 +56,12 @@
         {% endwith %}
 
         <div class="mb-6 flex justify-between items-center">
-            <h1 class="text-2xl font-bold text-gray-900">My Cameras / Мои камеры</h1>
+            <h1 class="text-2xl font-bold text-gray-900">Mes Appareils</h1>
             <button onclick="openAddCameraModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition shadow-sm flex items-center gap-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                 </svg>
-                Add Camera / Добавить камеру
+Add Camera / Ajouter un appareil
             </button>
         </div>
 
@@ -96,7 +96,7 @@
                             <svg class="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
                             </svg>
-                            <span class="text-sm">Offline / Не в сети</span>
+                            <span class="text-sm">Hors ligne</span>
                         </div>
                     </div>
                     {% endif %}
@@ -104,10 +104,10 @@
                 
                 <div class="p-4 flex justify-between items-center">
                     <div class="text-xs text-gray-500">
-                        {% if cam.lat %}GPS: {{ cam.lat|round(4) }}, {{ cam.lng|round(4) }}{% else %}No GPS / Нет GPS{% endif %}
+                        {% if cam.lat %}GPS: {{ cam.lat|round(4) }}, {{ cam.lng|round(4) }}{% else %}Pas de GPS{% endif %}
                     </div>
                     <a href="{{ url_for('camera_view', camera_id=cam.id) }}" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition text-sm">
-                        View / Подробнее
+                        Voir l'appareil
                     </a>
                 </div>
             </div>
@@ -118,10 +118,10 @@
             <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
             </svg>
-            <h3 class="text-lg font-medium text-gray-900 mb-2">No cameras registered / Нет зарегистрированных камер</h3>
-            <p class="text-gray-500 mb-4">Configure your ESP32-CAM and add it here / Настройте вашу ESP32-CAM и добавьте её здесь</p>
+            <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun appareil enregistré</h3>
+            <p class="text-gray-500 mb-4">Connectez votre caméra de surveillance, votre smartphone ou votre webcam</p>
             <button onclick="openAddCameraModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition">
-                Add my first camera / Добавить первую камеру
+                Ajouter un appareil
             </button>
         </div>
         {% endif %}
@@ -430,6 +430,61 @@
                         <p class="text-xs text-center text-gray-400 mt-1">Passez à un abonnement supérieur pour plus de modèles.</p>
                     </div>
                     {% endif %}
+                </div>
+            </div>
+            
+            <!-- Compatibilité Matériel -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-2">
+                <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+                    <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
+                        </svg>
+                        Compatibilité Matériel
+                    </h2>
+                </div>
+                <div class="p-6">
+                    <p class="text-sm text-gray-500 mb-5">NovaSecurity fonctionne avec les appareils suivants. Les caméras IP génériques ne sont pas supportées.</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <!-- Webcam -->
+                        <div class="border border-green-200 bg-green-50 rounded-xl p-5 text-center">
+                            <svg class="w-10 h-10 mx-auto mb-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                            </svg>
+                            <h3 class="font-bold text-green-700 text-sm">Webcam PC / Mac</h3>
+                            <span class="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-200 text-green-800">✅ Supporté</span>
+                            <p class="text-xs text-green-600 mt-2">Via navigateur — aucun matériel supplémentaire</p>
+                        </div>
+                        <!-- Smartphone -->
+                        <div class="border border-green-200 bg-green-50 rounded-xl p-5 text-center">
+                            <svg class="w-10 h-10 mx-auto mb-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                            </svg>
+                            <h3 class="font-bold text-green-700 text-sm">Smartphone (iOS / Android)</h3>
+                            <span class="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-200 text-green-800">✅ Supporté</span>
+                            <p class="text-xs text-green-600 mt-2">Ouvrez <code>/setup</code> sur le téléphone et configurez le flux</p>
+                        </div>
+                        <!-- NovaCam -->
+                        <div class="border border-green-200 bg-green-50 rounded-xl p-5 text-center">
+                            <svg class="w-10 h-10 mx-auto mb-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                            <h3 class="font-bold text-green-700 text-sm">NovaCam (Matériel dédié)</h3>
+                            <span class="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-200 text-green-800">✅ Supporté</span>
+                            <p class="text-xs text-green-600 mt-2">ESP32-CAM firmware — flash et connectez-vous</p>
+                        </div>
+                    </div>
+                    <!-- IP Camera disclaimer -->
+                    <div class="mt-5 border border-red-200 bg-red-50 rounded-xl p-5 flex items-start gap-4">
+                        <svg class="w-8 h-8 flex-shrink-0 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        <div>
+                            <h3 class="font-bold text-red-700 text-sm">Caméras IP Génériques — Non supportées</h3>
+                            <p class="text-xs text-red-600 mt-1">NovaSecurity n'est pas compatible avec les caméras IP de marques tierces (Hikvision, Dahua, Reolink, etc.).</p>
+                            <p class="text-xs text-red-600 mt-2 font-medium">Vous souhaitez connecter une caméra IP ? <a href="https://novavivo.online" class="underline font-bold hover:text-red-800">Contactez-nous pour un devis NovaCam custom</a> — matériel, firmware et installation adaptés à vos besoins (parking, bureau, maison, dashcam).</p>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -843,7 +898,7 @@
                                 <input type="text" name="lng" value="{{ cam.lng or '' }}" placeholder="2.3522" class="w-full px-2 py-1 border rounded text-sm font-mono">
                             </div>
                             <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm">
-                                Save
+                                Enregistrer
                             </button>
                         </form>
                     </div>
@@ -856,7 +911,7 @@
     <div id="addCameraModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
         <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                <h3 class="font-bold text-gray-900">Add Camera / Добавить камеру</h3>
+                <h3 class="font-bold text-gray-900">Ajouter un appareil</h3>
                 <button onclick="closeAddCameraModal()" class="text-gray-500 hover:text-gray-700">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></svg>
@@ -865,7 +920,7 @@
             </div>
             <form method="POST" action="{{ url_for('add_camera') }}" class="p-6 space-y-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Camera Name / Название камеры</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nom de l'appareil (ex: Entrée, Dashcam...)</label>
                     <input type="text" name="name" placeholder="Front Gate" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                 </div>
                 <div>
