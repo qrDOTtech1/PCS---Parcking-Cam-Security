@@ -69,8 +69,8 @@ struct Config {
   char camera_id[33]   = "esp32cam-001";
   char server_url[128] = "https://web-production-10852.up.railway.app";
   int  rotation        = 0;   // 0=normal 1=180° 2=miroir-H 3=miroir-V
-  int  quality         = 12;  // JPEG quality (0-63, bas = meilleure qualité)
-  int  fps_limit       = 10;  // FPS max envoyés au serveur
+  int  quality         = 8;   // JPEG quality (0-63, bas = meilleure qualité)
+  int  fps_limit       = 15;  // FPS max envoyés au serveur
 };
 
 Config cfg;
@@ -150,6 +150,7 @@ button:hover{background:#1d4ed8}
       <div>
         <label>Qualité JPEG</label>
         <select name="quality">
+          <option value="6"  %Q6% >Ultra (6) — ~20 Go/24h</option>
           <option value="8"  %Q8% >Haute  (8) — ~14 Go/24h</option>
           <option value="12" %Q12%>Normale (12) — ~9 Go/24h</option>
           <option value="20" %Q20%>Économe (20) — ~4 Go/24h</option>
@@ -161,6 +162,7 @@ button:hover{background:#1d4ed8}
           <option value="5"  %F5% >5 fps</option>
           <option value="10" %F10%>10 fps</option>
           <option value="15" %F15%>15 fps</option>
+          <option value="20" %F20%>20 fps</option>
         </select>
       </div>
     </div>
@@ -257,9 +259,9 @@ bool initCamera() {
   config.pin_reset    = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size   = FRAMESIZE_QVGA;  // 320x240 — bon équilibre qualité/débit
+  config.frame_size   = FRAMESIZE_VGA;   // 640x480 — bonne qualité
   config.jpeg_quality = cfg.quality;
-  config.fb_count     = 2;
+  config.fb_count     = 3;               // 3 buffers pour éviter FB-OVF
 
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
@@ -267,8 +269,18 @@ bool initCamera() {
     return false;
   }
 
-  // Appliquer la rotation
+  // Réglages spécifiques au capteur
   sensor_t *s = esp_camera_sensor_get();
+
+  // OV3660 : vflip natif + amélioration image
+  if (s->id.PID == 0x3660) {
+    Serial.println("Capteur OV3660 détecté");
+    s->set_vflip(s, 1);        // OV3660 est monté à l'envers sur AI Thinker
+    s->set_brightness(s, 1);   // légèrement plus lumineux
+    s->set_saturation(s, 0);
+  }
+
+  // Appliquer la rotation configurée (surcharge les réglages ci-dessus si besoin)
   switch (cfg.rotation) {
     case 0: s->set_vflip(s, 0); s->set_hmirror(s, 0); break;
     case 1: s->set_vflip(s, 1); s->set_hmirror(s, 1); break;  // 180°
@@ -401,12 +413,14 @@ String buildConfigPage() {
   html.replace("%R1%", cfg.rotation == 1 ? "selected" : "");
   html.replace("%R2%", cfg.rotation == 2 ? "selected" : "");
   html.replace("%R3%", cfg.rotation == 3 ? "selected" : "");
+  html.replace("%Q6%",  cfg.quality == 6  ? "selected" : "");
   html.replace("%Q8%",  cfg.quality == 8  ? "selected" : "");
   html.replace("%Q12%", cfg.quality == 12 ? "selected" : "");
   html.replace("%Q20%", cfg.quality == 20 ? "selected" : "");
   html.replace("%F5%",  cfg.fps_limit == 5  ? "selected" : "");
   html.replace("%F10%", cfg.fps_limit == 10 ? "selected" : "");
   html.replace("%F15%", cfg.fps_limit == 15 ? "selected" : "");
+  html.replace("%F20%", cfg.fps_limit == 20 ? "selected" : "");
   html.replace("%IP%",  WiFi.localIP().toString());
   return html;
 }
