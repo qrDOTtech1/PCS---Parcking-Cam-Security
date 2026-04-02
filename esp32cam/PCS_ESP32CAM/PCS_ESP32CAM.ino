@@ -334,7 +334,7 @@ void writeFrameToSD(const uint8_t *data, size_t len) {
     Serial.println("New recording: " + path);
 
     // Supprimer les fichiers de plus de 24h
-    purgeOldRecordings();
+    
   }
 
   if (!recFile) return;
