@@ -65,27 +65,21 @@
                         {% endif %}
                     </div>
 
-                    <!-- Video feed -->
+                    <!-- Video feed — polling HTTP 350ms -->
                     <div class="relative bg-gray-900 aspect-video">
-                        {% if camera.is_online %}
-                        <img src="/mjpeg_stream/{{ camera.id }}"
-                            alt="Live stream"
-                            class="w-full h-full object-contain">
-                        <div class="absolute top-3 right-3 flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow">
-                            <span class="w-1.5 h-1.5 rounded-full bg-white pulse inline-block"></span>
-                            LIVE
-                        </div>
-                        {% else %}
-                        <div class="w-full h-full flex items-center justify-center text-gray-500">
+                        <img id="feed-main" alt="Live stream" class="w-full h-full object-contain" style="display:none">
+                        <div id="feed-offline" class="absolute inset-0 flex items-center justify-center text-gray-500">
                             <div class="text-center">
                                 <svg class="w-16 h-16 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                                 </svg>
-                                <p class="text-gray-400 font-medium">Camera offline</p>
-                                <p class="text-gray-500 text-sm mt-1">Waiting for stream...</p>
+                                <p id="feed-status" class="text-gray-400 font-medium">Connexion...</p>
                             </div>
                         </div>
-                        {% endif %}
+                        <div id="live-badge" class="hidden absolute top-3 right-3 flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow">
+                            <span class="w-1.5 h-1.5 rounded-full bg-white pulse inline-block"></span>
+                            LIVE
+                        </div>
                     </div>
 
                     <div class="px-5 py-3 bg-gray-50/50 border-t border-gray-100 flex justify-between items-center text-xs text-gray-400">
@@ -382,28 +376,52 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
     <script>
         const socket = io();
-        // Rejoindre les rooms des caméras sidebar
-        {% for cam in cameras %}{% if cam.id != camera.id and cam.is_online %}
-        socket.emit('client_watch', {camera_id: {{ cam.id }}});
-        {% endif %}{% endfor %}
 
-        // Recevoir les frames sidebar via SocketIO
-        socket.on('frame_update', function(data) {
-            const img = document.getElementById('sidebar_' + data.camera_id);
-            if (img && data.frame_b64) {
-                img.src = 'data:image/jpeg;base64,' + data.frame_b64;
-            }
-        });
+        // ── Stream principal — polling HTTP 350ms ──────────────────
+        const MAIN_CAM_ID = {{ camera.id }};
+        const feedImg     = document.getElementById('feed-main');
+        const feedOffline = document.getElementById('feed-offline');
+        const liveBadge   = document.getElementById('live-badge');
+        let pollBusy = false, missCount = 0;
 
-        // Fallback polling 5s
+        function pollMainFrame() {
+            if (pollBusy) return;
+            pollBusy = true;
+            const img = new Image();
+            img.onload = function() {
+                feedImg.src = img.src;
+                feedImg.style.display = '';
+                feedOffline.style.display = 'none';
+                liveBadge.classList.remove('hidden');
+                missCount = 0;
+                pollBusy = false;
+            };
+            img.onerror = function() {
+                missCount++;
+                if (missCount >= 8) {
+                    feedImg.style.display = 'none';
+                    feedOffline.style.display = '';
+                    liveBadge.classList.add('hidden');
+                    document.getElementById('feed-status').textContent = 'Hors ligne';
+                }
+                pollBusy = false;
+            };
+            img.src = '/video_feed/' + MAIN_CAM_ID + '?t=' + Date.now();
+        }
+        setInterval(pollMainFrame, 350);
+        pollMainFrame();
+
+        // ── Sidebar cameras — polling 3s ────────────────────────────
         setInterval(() => {
-            {% for cam in cameras %}{% if cam.id != camera.id and cam.is_online %}
+            {% for cam in cameras %}{% if cam.id != camera.id %}
             const sideImg{{ cam.id }} = document.getElementById('sidebar_{{ cam.id }}');
-            if (sideImg{{ cam.id }} && !sideImg{{ cam.id }}.src.startsWith('data:')) {
-                sideImg{{ cam.id }}.src = '/video_feed/{{ cam.id }}?t=' + Date.now();
+            if (sideImg{{ cam.id }}) {
+                const s = new Image();
+                s.onload = function() { sideImg{{ cam.id }}.src = s.src; };
+                s.src = '/video_feed/{{ cam.id }}?t=' + Date.now();
             }
             {% endif %}{% endfor %}
-        }, 5000);
+        }, 3000);
 
         // ── Historique temps réel pour cette caméra ──
         socket.on('new_detection', function(d) {
@@ -444,165 +462,63 @@
         // Rejoindre le room user pour recevoir new_detection
         socket.emit('client_watch', {camera_id: {{ camera.id }}});
 
-        // ── Enregistrements ESP32 ──────────────────────────────────
-        const CAMERA_ID = {{ camera.id }};
-        socket.emit('client_watch', {camera_id: CAMERA_ID});
+        // ── Enregistrements ESP32 — fetch HTTP direct ─────────────
+        const CAMERA_ID  = {{ camera.id }};
+        const ESP32_IP   = '{{ camera.esp32_local_ip or "" }}';
 
-        // Demander la liste des enregistrements
         function loadRecordings() {
             const btn = document.getElementById('btnLoadRecordings');
             btn.textContent = 'Chargement...';
             btn.disabled = true;
-            socket.emit('recording_list_request', {camera_id: CAMERA_ID});
-            // Timeout si pas de réponse en 10s
-            setTimeout(() => {
-                if (btn.disabled) {
+            fetch('/api/recordings/' + CAMERA_ID)
+                .then(r => r.json())
+                .then(data => {
+                    btn.textContent = 'Rafraîchir';
+                    btn.disabled = false;
+                    renderRecordings(data);
+                })
+                .catch(e => {
                     btn.textContent = 'Charger la liste';
                     btn.disabled = false;
-                    document.getElementById('recordingsPlaceholder').textContent =
-                        'Caméra hors ligne ou pas de carte SD.';
-                }
-            }, 10000);
+                    document.getElementById('recordingsPlaceholder').textContent = 'Erreur: ' + e;
+                });
         }
 
-        // Recevoir la liste des enregistrements
-        socket.on('recording_list_update', function(data) {
-            if (data.camera_id !== CAMERA_ID) return;
-            const btn = document.getElementById('btnLoadRecordings');
-            btn.textContent = 'Rafraîchir';
-            btn.disabled = false;
-
-            const container = document.getElementById('recordingsContent');
+        function renderRecordings(data) {
+            const container   = document.getElementById('recordingsContent');
             const placeholder = document.getElementById('recordingsPlaceholder');
             placeholder.classList.add('hidden');
             container.classList.remove('hidden');
             container.innerHTML = '';
 
-            if (!data.files || data.files.length === 0) {
-                container.innerHTML = '<p class="text-sm text-gray-400 text-center">Aucun enregistrement trouvé.</p>';
+            const files = data.files || [];
+            if (files.length === 0) {
+                container.innerHTML = '<p class="text-sm text-gray-400 text-center py-3">Aucun enregistrement — la liste se met à jour toutes les 60s.</p>';
                 return;
             }
-
-            data.files.forEach(function(f) {
-                const sizeStr = f.size ? (f.size / 1024 / 1024).toFixed(1) + ' MB' : '';
+            files.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
+            files.forEach(function(f) {
+                const name    = f.name || f;
+                const sizeStr = f.size ? (f.size / 1048576).toFixed(1) + ' Mo' : '';
+                const display = name.replace('_', ' ').replace('.pcs', 'h00');
                 const div = document.createElement('div');
                 div.className = 'flex items-center justify-between p-2 bg-gray-50 rounded-lg';
+                const btns = ESP32_IP
+                    ? '<a href="http://' + ESP32_IP + '/stream?f=' + name + '" target="_blank" class="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700">▶ Lire</a>' +
+                      '<a href="http://' + ESP32_IP + '/dl?f='     + name + '" target="_blank" class="text-xs bg-gray-600 text-white px-2 py-1 rounded hover:bg-gray-700">⬇ DL</a>'
+                    : '<span class="text-xs text-gray-400 italic">IP locale inconnue</span>';
                 div.innerHTML =
                     '<div class="flex items-center gap-2">' +
-                        '<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
-                            '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/>' +
-                        '</svg>' +
-                        '<span class="text-sm font-medium text-gray-700">' + f.name + '</span>' +
+                        '<span class="text-sm font-medium text-gray-700">📼 ' + display + '</span>' +
                         '<span class="text-xs text-gray-400">' + sizeStr + '</span>' +
                     '</div>' +
-                    '<div class="flex gap-1">' +
-                        '<button onclick="pcsPlayerStart(\'' + f.name + '\')" ' +
-                            'class="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700">Lire</button>' +
-                        '<button onclick="downloadRecording(\'' + f.name + '\')" ' +
-                            'class="text-xs bg-gray-600 text-white px-2 py-1 rounded hover:bg-gray-700">DL</button>' +
-                    '</div>';
+                    '<div class="flex gap-1">' + btns + '</div>';
                 container.appendChild(div);
             });
-        });
-
-        // ── PCS Player (.pcs format: [uint32 len][JPEG data]...) ──
-        let pcsChunks = [];
-        let pcsFilename = '';
-
-        function pcsPlayerStart(filename) {
-            pcsChunks = [];
-            pcsFilename = filename;
-            document.getElementById('pcsPlayer').classList.remove('hidden');
-            document.getElementById('playerTitle').textContent = filename;
-            document.getElementById('pcsPlayerStatus').textContent = 'Téléchargement...';
-            document.getElementById('pcsPlayerFrame').textContent = 'Frame 0/0';
-            document.getElementById('pcsPlayerProgress').style.width = '0%';
-            socket.emit('recording_download_request', {camera_id: CAMERA_ID, filename: filename});
         }
 
-        function pcsPlayerStop() {
-            document.getElementById('pcsPlayer').classList.add('hidden');
-            pcsChunks = [];
-        }
-
-        // Recevoir les chunks du fichier
-        socket.on('recording_chunk_relay', function(data) {
-            if (data.camera_id !== CAMERA_ID || data.filename !== pcsFilename) return;
-            pcsChunks.push(data.data);
-            const pct = Math.round((data.index + 1) / data.total * 100);
-            document.getElementById('pcsPlayerStatus').textContent = 'Téléchargement ' + pct + '%';
-            document.getElementById('pcsPlayerProgress').style.width = pct + '%';
-
-            if (data.is_last) {
-                // Assembler les chunks
-                const fullB64 = pcsChunks.join('');
-                const binary = atob(fullB64);
-                const bytes = new Uint8Array(binary.length);
-                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
-                if (pcsDownloadMode) {
-                    // Télécharger le fichier brut
-                    const blob = new Blob([bytes], {type: 'application/octet-stream'});
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(blob);
-                    a.download = pcsFilename;
-                    a.click();
-                    URL.revokeObjectURL(a.href);
-                    pcsChunks = [];
-                    pcsDownloadMode = false;
-                } else {
-                    // Lire dans le player
-                    document.getElementById('pcsPlayerStatus').textContent = 'Décodage...';
-                    playPcsBuffer(bytes.buffer);
-                }
-            }
-        });
-
-        function playPcsBuffer(arrayBuffer) {
-            const view = new DataView(arrayBuffer);
-            let offset = 0;
-            const frames = [];
-            while (offset + 4 < view.byteLength) {
-                const len = view.getUint32(offset, true);
-                offset += 4;
-                if (len === 0 || offset + len > view.byteLength) break;
-                const jpegData = new Uint8Array(arrayBuffer, offset, len);
-                frames.push(URL.createObjectURL(new Blob([jpegData], {type: 'image/jpeg'})));
-                offset += len;
-            }
-            if (frames.length === 0) {
-                document.getElementById('pcsPlayerStatus').textContent = 'Aucune frame trouvée';
-                return;
-            }
-            document.getElementById('pcsPlayerStatus').textContent = 'Lecture';
-            let i = 0;
-            const imgEl = document.getElementById('pcsPlayerImg');
-            const frameEl = document.getElementById('pcsPlayerFrame');
-            const progEl = document.getElementById('pcsPlayerProgress');
-            const interval = setInterval(() => {
-                if (i >= frames.length || document.getElementById('pcsPlayer').classList.contains('hidden')) {
-                    clearInterval(interval);
-                    frames.forEach(URL.revokeObjectURL);
-                    if (i >= frames.length) {
-                        document.getElementById('pcsPlayerStatus').textContent = 'Terminé';
-                    }
-                    return;
-                }
-                imgEl.src = frames[i];
-                frameEl.textContent = 'Frame ' + (i + 1) + '/' + frames.length;
-                progEl.style.width = ((i + 1) / frames.length * 100) + '%';
-                i++;
-            }, 100);
-        }
-
-        let pcsDownloadMode = false;
-
-        function downloadRecording(filename) {
-            pcsChunks = [];
-            pcsFilename = filename;
-            pcsDownloadMode = true;
-            socket.emit('recording_download_request', {camera_id: CAMERA_ID, filename: filename});
-        }
+        // Rejoindre la room pour les alertes temps réel
+        socket.emit('client_watch', {camera_id: CAMERA_ID});
     </script>
 </body>
 </html>

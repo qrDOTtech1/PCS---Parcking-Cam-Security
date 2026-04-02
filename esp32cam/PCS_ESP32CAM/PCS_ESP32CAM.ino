@@ -52,8 +52,12 @@
 #define HREF_GPIO_NUM   23
 #define PCLK_GPIO_NUM   22
 
-// Bouton config : GPIO 13 appuyé au boot → mode AP
+// Bouton config : GPIO 13 appuyé au boot → mode AP (optionnel)
 #define CONFIG_BTN_PIN  13
+
+// Double-reset detection via RTC memory (persist across soft resets)
+RTC_DATA_ATTR int  rtcResetCount = 0;
+RTC_DATA_ATTR uint32_t rtcResetMs = 0;
 
 // ═══════════════════════════════════════════════
 // CONFIGURATION
@@ -612,8 +616,23 @@ void setup() {
   pinMode(CONFIG_BTN_PIN, INPUT_PULLUP);
   loadConfig();
 
-  // Forcer mode config si bouton appuyé au boot OU si pas de SSID
-  configMode = (digitalRead(CONFIG_BTN_PIN) == LOW) || (strlen(cfg.wifi_ssid) == 0);
+  // ── Double-reset detection ──────────────────────────────────────
+  // Appuyer RST 2 fois en moins de 3s → mode config AP
+  uint32_t nowMs = millis();
+  bool doubleReset = false;
+  if (rtcResetCount >= 1 && (nowMs - rtcResetMs) < 3000) {
+    doubleReset = true;
+    rtcResetCount = 0;
+  } else {
+    rtcResetCount = 1;
+    rtcResetMs    = nowMs;
+  }
+  // Après 3s si l'ESP tourne encore, on remet le compteur à 0
+  // (géré en fin de setup)
+
+  // Forcer mode config si : double-reset OU bouton GPIO13 OU pas de SSID
+  configMode = doubleReset || (digitalRead(CONFIG_BTN_PIN) == LOW) || (strlen(cfg.wifi_ssid) == 0);
+  if (doubleReset) Serial.println(">>> DOUBLE RESET détecté — mode config <<<");
 
   camMutex = xSemaphoreCreateMutex();
 
@@ -676,6 +695,11 @@ void setup() {
     // Tâche stream sur Core 0
     xTaskCreatePinnedToCore(taskStream, "StreamTask", 8192, NULL, 1, NULL, 0);
   }
+
+  // Si on arrive ici sans double-reset, on remet le compteur à 0 après 3s
+  // pour ne pas déclencher le mode config au prochain reboot normal
+  delay(3000);
+  rtcResetCount = 0;
 }
 
 // ═══════════════════════════════════════════════

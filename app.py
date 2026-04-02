@@ -842,6 +842,18 @@ def mjpeg_stream(camera_id):
     return response
 
 
+@app.route("/api/recordings/<int:camera_id>")
+def api_recordings(camera_id):
+    """Retourne la liste des enregistrements SD de l'ESP32 (poussée via /recording_list_push)."""
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    camera = Camera.query.filter_by(id=camera_id, user_id=session["user_id"]).first()
+    if not camera:
+        return jsonify({"error": "Not found"}), 404
+    data = RECORDING_LISTS.get(camera_id, {"files": [], "updated_at": None})
+    return jsonify(data)
+
+
 @app.route("/api/camera/status/<int:camera_id>")
 def camera_status(camera_id):
     if "user_id" not in session:
