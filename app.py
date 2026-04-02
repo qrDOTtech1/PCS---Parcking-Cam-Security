@@ -69,6 +69,8 @@ FRAME_SEQUENCES = {}
 CAMERA_STATUS = {}
 MJPEG_STREAMS = {}
 PUBLIC_CAMERA_FRAMES = {}  # camera_id -> {frame, last_seen, name}
+RECORDING_LISTS = {}       # camera_id -> {files, sd_total, sd_used, updated_at}
+CAMERA_COMMANDS = {}       # camera_id -> deque of pending commands
 
 app = Flask(__name__)
 app.secret_key = os.environ.get(
@@ -683,6 +685,46 @@ def stream_upload():
             return "OK", 200
 
     return "No image", 400
+
+
+@app.route("/ws/stream", methods=["GET", "POST"])
+def ws_stream_http():
+    """Compat ancien firmware — binary POST JPEG brut."""
+    api_key = request.args.get("api_key") or request.headers.get("X-API-Key")
+    if not api_key:
+        return "Missing API Key", 401
+    camera = Camera.query.filter_by(api_key=api_key).first()
+    if not camera:
+        return "Invalid API Key", 401
+    if request.method == "POST" and request.data:
+        _process_frame(camera.id, request.data, camera)
+    resp = make_response("OK")
+    if camera.id in CAMERA_COMMANDS and CAMERA_COMMANDS[camera.id]:
+        cmd = CAMERA_COMMANDS[camera.id].popleft()
+        resp.headers["X-Command"] = cmd
+    return resp, 200
+
+
+@app.route("/recording_list_push", methods=["POST"])
+def recording_list_push():
+    """ESP32 pousse sa liste de fichiers SD toutes les 60s."""
+    api_key = request.headers.get("X-API-Key")
+    camera = Camera.query.filter_by(api_key=api_key).first() if api_key else None
+    if not camera:
+        return "Unauthorized", 401
+    try:
+        data = request.get_json(force=True) or {}
+        RECORDING_LISTS[camera.id] = {
+            "files": data.get("files", []),
+            "sd_total": data.get("sd_total", 0),
+            "sd_used": data.get("sd_used", 0),
+            "sd_ready": data.get("sd_ready", True),
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        logger.info(f"[RecList] cam={camera.id} {len(data.get('files', []))} fichiers")
+    except Exception as e:
+        logger.warning(f"[RecList] parse error: {e}")
+    return "OK", 200
 
 
 @app.route("/video_feed/<int:camera_id>")
