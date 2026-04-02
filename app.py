@@ -694,16 +694,19 @@ def stream_upload():
         except (ValueError, Exception):
             db.session.rollback()
 
-    if "image" in request.files:
-        file = request.files["image"]
-        if file and file.filename != "":
-            frame_data = file.read()
-            if frame_data:
-                _store_frame(camera.id, frame_data)
-                resp = make_response("OK")
-                if camera.id in CAMERA_COMMANDS and CAMERA_COMMANDS[camera.id]:
-                    resp.headers["X-Command"] = CAMERA_COMMANDS[camera.id].popleft()
-                return resp, 200
+    # Accepte JPEG brut (Content-Type: image/jpeg) OU multipart form-data
+    frame_data = None
+    if request.content_type and "image/jpeg" in request.content_type:
+        frame_data = request.data  # JPEG brut
+    elif "image" in request.files:
+        frame_data = request.files["image"].read()
+
+    if frame_data:
+        _store_frame(camera.id, frame_data)
+        resp = make_response("OK")
+        if camera.id in CAMERA_COMMANDS and CAMERA_COMMANDS[camera.id]:
+            resp.headers["X-Command"] = CAMERA_COMMANDS[camera.id].popleft()
+        return resp, 200
 
     return "No image", 400
 

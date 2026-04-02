@@ -566,41 +566,42 @@ void taskStream(void *param) {
       continue;
     }
 
-    if (xSemaphoreTake(camMutex, 100 / portTICK_PERIOD_MS) == pdTRUE) {
-      camera_fb_t *fb = esp_camera_fb_get();
-      if (fb) {
-        // Écriture SD
-        if (sdReady) writeFrameToSD(fb->buf, fb->len);
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (!fb) { vTaskDelay(10 / portTICK_PERIOD_MS); continue; }
 
-        // Envoi HTTP vers PCS
-        HTTPClient http;
-        String url = String(cfg.server_url) + "/stream_upload";
-        http.begin(url);
-        http.addHeader("X-API-Key", cfg.camera_id);
+    // ── COPIE IMMÉDIATE + LIBÉRATION DU BUFFER CAMÉRA ──────────────
+    // Le buffer DMA doit être libéré AVANT tout I/O (SD / HTTP)
+    // sinon cam_hal: FB-OVF → plus aucune frame capturée
+    size_t len = fb->len;
+    uint8_t *buf = (uint8_t*)malloc(len);
+    if (buf) memcpy(buf, fb->buf, len);
+    esp_camera_fb_return(fb);   // ← libéré immédiatement
 
-        // Construction multipart manuellement (plus rapide que HTTPClient multipart)
-        String boundary = "PCSboundary";
-        String bodyHead = "--" + boundary + "\r\n"
-                          "Content-Disposition: form-data; name=\"image\"; filename=\"f.jpg\"\r\n"
-                          "Content-Type: image/jpeg\r\n\r\n";
-        String bodyTail = "\r\n--" + boundary + "--\r\n";
-
-        uint8_t *payload = (uint8_t*)malloc(bodyHead.length() + fb->len + bodyTail.length());
-        if (payload) {
-          memcpy(payload, bodyHead.c_str(), bodyHead.length());
-          memcpy(payload + bodyHead.length(), fb->buf, fb->len);
-          memcpy(payload + bodyHead.length() + fb->len, bodyTail.c_str(), bodyTail.length());
-
-          http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
-          http.POST(payload, bodyHead.length() + fb->len + bodyTail.length());
-          free(payload);
-        }
-        http.end();
-        esp_camera_fb_return(fb);
-        lastSent = millis();
-      }
-      xSemaphoreGive(camMutex);
+    if (!buf) {
+      Serial.println("[Stream] malloc fail, skip frame");
+      vTaskDelay(100 / portTICK_PERIOD_MS);
+      continue;
     }
+
+    Serial.printf("[Stream] frame %d bytes\n", len);
+
+    // Écriture SD (sur copie locale)
+    if (sdReady) writeFrameToSD(buf, len);
+
+    // Envoi HTTP — JPEG brut (plus simple, moins de RAM que multipart)
+    HTTPClient http;
+    String url = String(cfg.server_url) + "/stream_upload";
+    http.begin(url);
+    http.setTimeout(4000);
+    http.addHeader("X-API-Key",    cfg.camera_id);
+    http.addHeader("Content-Type", "image/jpeg");
+    int code = http.POST(buf, len);
+    if (code > 0) Serial.printf("[Stream] HTTP %d\n", code);
+    else          Serial.printf("[Stream] err %s\n", http.errorToString(code).c_str());
+    http.end();
+
+    free(buf);
+    lastSent = millis();
     vTaskDelay(2 / portTICK_PERIOD_MS);
   }
 }
