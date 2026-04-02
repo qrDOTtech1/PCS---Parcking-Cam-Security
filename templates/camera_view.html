@@ -67,7 +67,7 @@
 
                     <!-- Video feed — polling HTTP 350ms -->
                     <div class="relative bg-gray-900 aspect-video">
-                        <img id="feed-main" alt="Live stream" class="w-full h-full object-contain" style="display:none">
+                        <img id="feed-main" alt="" class="absolute inset-0 w-full h-full object-cover" style="opacity:0">
                         <div id="feed-offline" class="absolute inset-0 flex items-center justify-center text-gray-500">
                             <div class="text-center">
                                 <svg class="w-16 h-16 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -390,7 +390,7 @@
             const img = new Image();
             img.onload = function() {
                 feedImg.src = img.src;
-                feedImg.style.display = '';
+                feedImg.style.opacity = '1';
                 feedOffline.style.display = 'none';
                 liveBadge.classList.remove('hidden');
                 missCount = 0;
@@ -399,7 +399,7 @@
             img.onerror = function() {
                 missCount++;
                 if (missCount >= 8) {
-                    feedImg.style.display = 'none';
+                    feedImg.style.opacity = '0';
                     feedOffline.style.display = '';
                     liveBadge.classList.add('hidden');
                     document.getElementById('feed-status').textContent = 'Hors ligne';

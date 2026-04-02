@@ -33,6 +33,7 @@ from flask import (
     Response,
     flash,
     send_file,
+    make_response,
 )
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_limiter import Limiter
