@@ -176,7 +176,7 @@ class AdminPCSApp:
         hdr.pack(fill=tk.X)
         tk.Label(
             hdr,
-            text="NovaSecurity — Admin Panel",
+            text="PCS — Admin Panel",
             font=("Arial", 15, "bold"),
             fg="#3b82f6",
             bg="#1e293b",

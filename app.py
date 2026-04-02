@@ -549,7 +549,7 @@ def upload_image():
 
                 if blacklisted:
                     threat = True
-                    alert_msg = f"🚨 ALERTE NOVASECURITY 🚨\nVéhicule Suspect!\nPlaque: {normalized_read}\nCaméra: {camera.name}\nRaison: {blacklisted.description}"
+                    alert_msg = f"🚨 ALERTE PCS 🚨\nVéhicule Suspect!\nPlaque: {normalized_read}\nCaméra: {camera.name}\nRaison: {blacklisted.description}"
                     send_alert(user_id, alert_msg)
                     socketio.emit(
                         "threat_alert",
@@ -680,15 +680,6 @@ def stream_upload():
 
             FRAME_ETAGS[camera.id] = hashlib.md5(frame_data).hexdigest()
 
-            socketio.emit(
-                "frame_update",
-                {
-                    "camera_id": camera.id,
-                    "timestamp": now.isoformat(),
-                    "frame_b64": base64.b64encode(frame_data).decode("ascii"),
-                },
-                room=f"camera_{camera.id}",
-            )
             return "OK", 200
 
     return "No image", 400
