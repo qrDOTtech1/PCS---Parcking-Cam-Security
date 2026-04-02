@@ -31,6 +31,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include <algorithm>   // std::swap
 
 // ═══════════════════════════════════════════════
 // PINS — AI Thinker ESP32-CAM
@@ -373,7 +374,7 @@ void purgeOldRecordings() {
   for (int i = 0; i < count - 1; i++)
     for (int j = i + 1; j < count; j++)
       if (files[i].name > files[j].name)
-        swap(files[i].name, files[j].name);
+        std::swap(files[i].name, files[j].name);
 
   // Supprimer les plus anciens si on dépasse 25 fichiers
   while (count > 25) {
@@ -456,7 +457,7 @@ void handleRecordings() {
     // Tri décroissant (plus récent en premier)
     for (int i = 0; i < count - 1; i++)
       for (int j = i + 1; j < count; j++)
-        if (names[i] < names[j]) swap(names[i], names[j]);
+        if (names[i] < names[j]) std::swap(names[i], names[j]);
 
     for (int i = 0; i < count; i++) {
       String fname = names[i];
