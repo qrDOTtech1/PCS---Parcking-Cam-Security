@@ -71,6 +71,7 @@ MJPEG_STREAMS = {}
 PUBLIC_CAMERA_FRAMES = {}  # camera_id -> {frame, last_seen, name}
 RECORDING_LISTS = {}       # camera_id -> {files, sd_total, sd_used, updated_at}
 CAMERA_COMMANDS = {}       # camera_id -> deque of pending commands
+PENDING_LAST_SEEN = {}     # camera_id -> datetime (flush async every 60s)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get(
@@ -475,6 +476,26 @@ def create_tables():
 
     start_summary_worker(app, LATEST_FRAMES, CAMERA_STATUS, BLUE_FLASH_LAST)
 
+    # Background: flush last_seen vers DB toutes les 60s (non bloquant)
+    def _flush_last_seen():
+        while True:
+            eventlet.sleep(60)
+            if not PENDING_LAST_SEEN:
+                continue
+            pending = dict(PENDING_LAST_SEEN)
+            PENDING_LAST_SEEN.clear()
+            try:
+                with app.app_context():
+                    for cam_id, ts in pending.items():
+                        cam = db.session.get(Camera, cam_id)
+                        if cam:
+                            cam.last_seen = ts
+                    db.session.commit()
+            except Exception as e:
+                logger.warning(f"[LastSeen] flush error: {e}")
+
+    eventlet.spawn(_flush_last_seen)
+
 
 def get_max_roboflow_models(user):
     mode = getattr(user, "subscription_mode", "standard") or "standard"
@@ -631,6 +652,23 @@ def public_stream(camera_id):
     return "No image", 400
 
 
+def _store_frame(cam_id, frame_data):
+    """Stocke une frame en mémoire — aucun I/O DB, retour immédiat."""
+    now = datetime.utcnow()
+    LATEST_FRAMES[cam_id] = frame_data
+    prev_count = CAMERA_STATUS.get(cam_id, {}).get("frame_count", 0)
+    CAMERA_STATUS[cam_id] = {"connected": True, "last_frame": now, "frame_count": prev_count + 1}
+    if cam_id not in FRAME_BUFFERS:
+        FRAME_BUFFERS[cam_id] = deque(maxlen=BUFFER_SIZE)
+        FRAME_TIMESTAMPS[cam_id] = deque(maxlen=BUFFER_SIZE)
+        FRAME_SEQUENCES[cam_id] = 0
+    FRAME_BUFFERS[cam_id].append(frame_data)
+    FRAME_TIMESTAMPS[cam_id].append(now)
+    FRAME_SEQUENCES[cam_id] += 1
+    FRAME_ETAGS[cam_id] = hashlib.md5(frame_data).hexdigest()
+    PENDING_LAST_SEEN[cam_id] = now
+
+
 @app.route("/stream_upload", methods=["POST"])
 def stream_upload():
     api_key = request.headers.get("X-API-Key") or request.form.get("api_key")
@@ -641,48 +679,30 @@ def stream_upload():
     if not camera:
         return "Invalid API Key", 401
 
-    camera.last_seen = datetime.utcnow()
-
+    # GPS update — commit seulement si données présentes (rare, non bloquant pour flux)
     lat = request.form.get("lat")
     lng = request.form.get("lng")
-    speed = request.form.get("speed")
     if lat and lng:
         try:
             camera.lat = float(lat)
             camera.lng = float(lng)
+            speed = request.form.get("speed")
             if speed:
                 camera.speed = float(speed)
-        except ValueError:
-            pass
-
-    db.session.commit()
+            db.session.commit()
+        except (ValueError, Exception):
+            db.session.rollback()
 
     if "image" in request.files:
         file = request.files["image"]
         if file and file.filename != "":
             frame_data = file.read()
-            now = datetime.utcnow()
-            LATEST_FRAMES[camera.id] = frame_data
-
-            CAMERA_STATUS[camera.id] = {
-                "connected": True,
-                "last_frame": now,
-                "frame_count": CAMERA_STATUS.get(camera.id, {}).get("frame_count", 0)
-                + 1,
-            }
-
-            if camera.id not in FRAME_BUFFERS:
-                FRAME_BUFFERS[camera.id] = deque(maxlen=BUFFER_SIZE)
-                FRAME_TIMESTAMPS[camera.id] = deque(maxlen=BUFFER_SIZE)
-                FRAME_SEQUENCES[camera.id] = 0
-
-            FRAME_BUFFERS[camera.id].append(frame_data)
-            FRAME_TIMESTAMPS[camera.id].append(now)
-            FRAME_SEQUENCES[camera.id] += 1
-
-            FRAME_ETAGS[camera.id] = hashlib.md5(frame_data).hexdigest()
-
-            return "OK", 200
+            if frame_data:
+                _store_frame(camera.id, frame_data)
+                resp = make_response("OK")
+                if camera.id in CAMERA_COMMANDS and CAMERA_COMMANDS[camera.id]:
+                    resp.headers["X-Command"] = CAMERA_COMMANDS[camera.id].popleft()
+                return resp, 200
 
     return "No image", 400
 
@@ -697,7 +717,7 @@ def ws_stream_http():
     if not camera:
         return "Invalid API Key", 401
     if request.method == "POST" and request.data:
-        _process_frame(camera.id, request.data, camera)
+        _store_frame(camera.id, request.data)
     resp = make_response("OK")
     if camera.id in CAMERA_COMMANDS and CAMERA_COMMANDS[camera.id]:
         cmd = CAMERA_COMMANDS[camera.id].popleft()
