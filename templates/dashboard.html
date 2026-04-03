@@ -457,22 +457,23 @@ Add Camera / Ajouter un appareil
                     </div>
 
                     <!-- Modèle -->
-                    <div class="flex gap-2 items-end">
-                        <div class="flex-1">
-                            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Modèle vision</label>
-                            <select id="ollama-model"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-purple-300 focus:border-purple-400">
-                                {% if ollama_cfg and ollama_cfg.model_name %}
-                                <option value="{{ ollama_cfg.model_name }}" selected>{{ ollama_cfg.model_name }}</option>
-                                {% else %}
-                                <option value="">— cliquez "Charger les modèles" —</option>
-                                {% endif %}
-                            </select>
-                        </div>
-                        <button onclick="loadOllamaModels()"
-                            class="px-4 py-2 rounded-lg text-sm font-medium bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 transition whitespace-nowrap">
-                            Charger les modèles
-                        </button>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Modèle vision</label>
+                        <input type="text" id="ollama-model" list="ollama-model-list"
+                            value="{{ ollama_cfg.model_name if ollama_cfg else 'llava' }}"
+                            placeholder="ex: llava, moondream, llava-phi3..."
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-purple-300 focus:border-purple-400">
+                        <datalist id="ollama-model-list">
+                            <option value="llava">llava — vision générale</option>
+                            <option value="llava:13b">llava:13b</option>
+                            <option value="llava:34b">llava:34b</option>
+                            <option value="llava-phi3">llava-phi3 — léger + vision</option>
+                            <option value="llava-llama3">llava-llama3</option>
+                            <option value="moondream">moondream — ultra léger</option>
+                            <option value="bakllava">bakllava</option>
+                            <option value="minicpm-v">minicpm-v</option>
+                        </datalist>
+                        <p class="text-xs text-gray-400 mt-1">Tapez le nom exact ou choisissez dans la liste. Tous disponibles sur <a href="https://ollama.com/search?c=vision" target="_blank" class="text-purple-600 hover:underline">ollama.com/search?c=vision</a>.</p>
                     </div>
 
                     <!-- Intervalle + toggles -->
@@ -1420,39 +1421,7 @@ Add Camera / Ajouter un appareil
             }
         }
 
-        // ── Ollama Vision (fetch navigateur → ollama.com directement) ──
-        function loadOllamaModels() {
-            const key = document.getElementById('ollama-key').value.trim();
-            if (!key) { alert('Entrez votre clé API Ollama d\'abord.'); return; }
-            const sel = document.getElementById('ollama-model');
-            const saved = sel.value;
-            sel.innerHTML = '<option>Chargement...</option>';
-            // Fetch direct depuis le navigateur — pas de DNS Railway
-            fetch('https://ollama.com/api/tags', {
-                headers: { 'Authorization': 'Bearer ' + key }
-            })
-            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-            .then(data => {
-                const VISION = ['llava','bakllava','moondream','minicpm','llava-phi','llava-llama','gemma3','mistral-small3','cogvlm','qwen2-vl'];
-                const raw = data.models || [];
-                const models = raw.map(m => ({
-                    name: m.name || m,
-                    vision: VISION.some(kw => (m.name || m).toLowerCase().includes(kw))
-                })).sort((a,b) => (b.vision - a.vision) || a.name.localeCompare(b.name));
-                sel.innerHTML = '';
-                if (!models.length) { sel.innerHTML = '<option>Aucun modèle disponible</option>'; return; }
-                models.forEach(m => {
-                    const opt = document.createElement('option');
-                    opt.value = m.name;
-                    opt.textContent = m.name + (m.vision ? ' 👁️' : '');
-                    if (m.name === saved) opt.selected = true;
-                    sel.appendChild(opt);
-                });
-                if (!sel.value) sel.value = models[0].name;
-            })
-            .catch(e => { sel.innerHTML = '<option>Erreur: ' + e.message + '</option>'; console.error(e); });
-        }
-
+        // ── Ollama Vision ──────────────────────────────────────────────
         function saveOllamaConfig() {
             const payload = {
                 base_url: 'https://ollama.com',
