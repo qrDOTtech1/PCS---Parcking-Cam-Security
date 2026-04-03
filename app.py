@@ -78,6 +78,78 @@ CAMERA_COMMANDS = {}       # camera_id -> deque of pending commands
 PENDING_LAST_SEEN = {}     # camera_id -> datetime (flush async every 60s)
 _ollama_last_recap = {}    # user_id -> datetime (dernière exécution recap Ollama)
 
+# ── DNS bypass pour ollama.com (Railway ne résout pas ce domaine) ─────
+def _udp_dns_resolve(hostname, dns_server="8.8.8.8"):
+    """Résout un hostname via UDP direct sur Google DNS — bypass DNS interne Railway."""
+    import socket as _socket
+    import struct as _struct
+    import os as _os
+    txid = _os.urandom(2)
+    # En-tête DNS : QR=0, OPCODE=0, RD=1, QDCOUNT=1
+    pkt = txid + b"\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+    for label in hostname.split("."):
+        lb = label.encode()
+        pkt += bytes([len(lb)]) + lb
+    pkt += b"\x00\x00\x01\x00\x01"          # null + A + IN
+    s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+    s.settimeout(5)
+    try:
+        s.sendto(pkt, (dns_server, 53))
+        resp = s.recvfrom(512)[0]
+    finally:
+        s.close()
+    # Ignorer en-tête (12 octets) + section question
+    off = 12
+    while off < len(resp):
+        ln = resp[off]
+        if ln == 0:
+            off += 1
+            break
+        if ln & 0xC0 == 0xC0:
+            off += 2
+            break
+        off += ln + 1
+    off += 4                                  # qtype + qclass
+    n_ans = _struct.unpack("!H", resp[6:8])[0]
+    for _ in range(n_ans):
+        if off >= len(resp):
+            break
+        if resp[off] & 0xC0 == 0xC0:
+            off += 2
+        else:
+            while off < len(resp) and resp[off] != 0:
+                off += resp[off] + 1
+            off += 1
+        if off + 10 > len(resp):
+            break
+        rtype = _struct.unpack("!H", resp[off:off + 2])[0]
+        off += 8                              # type + class + ttl
+        rdlen = _struct.unpack("!H", resp[off:off + 2])[0]
+        off += 2
+        if rtype == 1 and rdlen == 4:        # enregistrement A
+            return ".".join(str(b) for b in resp[off:off + 4])
+        off += rdlen
+    raise RuntimeError(f"DNS: aucun enregistrement A pour {hostname}")
+
+_OLLAMA_BYPASS_HOSTS = {"ollama.com"}
+_dns_cache = {}
+
+_orig_getaddrinfo = socket.getaddrinfo
+
+def _patched_getaddrinfo(host, port, *args, **kwargs):
+    if host in _OLLAMA_BYPASS_HOSTS:
+        if host not in _dns_cache:
+            try:
+                _dns_cache[host] = _udp_dns_resolve(host)
+            except Exception as exc:
+                logging.getLogger(__name__).warning(f"[DNSbypass] échec résolution {host}: {exc}")
+                return _orig_getaddrinfo(host, port, *args, **kwargs)
+        ip = _dns_cache[host]
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port or 443))]
+    return _orig_getaddrinfo(host, port, *args, **kwargs)
+
+socket.getaddrinfo = _patched_getaddrinfo
+
 # ── Enregistrements serveur (/app/data/rec) ───────────────────────────
 import struct
 REC_DIR       = "/app/data/rec"    # monté sur le volume Railway
