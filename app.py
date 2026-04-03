@@ -703,12 +703,11 @@ def create_tables():
                                 try:
                                     img_b64 = base64.b64encode(frame).decode()
                                     vision_prompt = (
-                                        "Tu es un système de surveillance de parking professionnel. "
-                                        "Analyse cette image et décris en 3-4 phrases: "
-                                        "1) les véhicules visibles (nombre, type, couleur, position), "
-                                        "2) les personnes si présentes, "
-                                        "3) toute activité inhabituelle ou suspecte, "
-                                        "4) l'état général de la zone. Sois précis et factuel."
+                                        "Tu es un système de surveillance professionnel. "
+                                        "Analyse cette image de caméra et décris précisément en 3-4 phrases ce que tu vois: "
+                                        "les personnes présentes et leurs activités, les véhicules si visibles, "
+                                        "les objets ou éléments notables, et toute situation inhabituelle ou suspecte. "
+                                        "Décris la scène telle qu'elle est, sans suppositions. Sois factuel et précis."
                                     )
                                     resp = requests.post(
                                         "https://ollama.com/api/chat",
