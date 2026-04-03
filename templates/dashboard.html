@@ -507,8 +507,15 @@ Add Camera / Ajouter un appareil
                         </div>
                     </div>
 
-                    <!-- Bouton save -->
-                    <div class="flex justify-end pt-1">
+                    <!-- Actions -->
+                    <div class="flex items-center justify-between pt-1 gap-3 flex-wrap">
+                        <div class="flex items-center gap-2">
+                            <button onclick="testOllama()"
+                                class="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 transition">
+                                Tester la connexion serveur
+                            </button>
+                            <span id="ollama-test-result" class="text-sm font-medium hidden"></span>
+                        </div>
                         <button onclick="saveOllamaConfig()"
                             class="px-5 py-2 rounded-lg text-sm font-semibold bg-purple-600 text-white hover:bg-purple-700 transition">
                             Sauvegarder
@@ -1422,6 +1429,34 @@ Add Camera / Ajouter un appareil
         }
 
         // ── Ollama Vision ──────────────────────────────────────────────
+        function testOllama() {
+            const key = document.getElementById('ollama-key').value.trim();
+            const model = document.getElementById('ollama-model').value.trim();
+            const res = document.getElementById('ollama-test-result');
+            res.className = 'text-sm font-medium';
+            res.textContent = '⏳ Test en cours...';
+            res.classList.remove('hidden');
+            fetch('/api/ollama/test', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({api_key: key, model_name: model}),
+            })
+            .then(r => r.json())
+            .then(d => {
+                if (d.ok) {
+                    res.className = 'text-sm font-medium text-green-600';
+                    res.textContent = '✓ OK — réponse: "' + d.reply + '"';
+                } else {
+                    res.className = 'text-sm font-medium text-red-600';
+                    res.textContent = '✗ Erreur: ' + d.error;
+                }
+            })
+            .catch(e => {
+                res.className = 'text-sm font-medium text-red-600';
+                res.textContent = '✗ ' + e;
+            });
+        }
+
         function saveOllamaConfig() {
             const payload = {
                 base_url: 'https://ollama.com',

@@ -1160,6 +1160,30 @@ def srv_recordings_delete_all_cameras(user_id=None):
     return jsonify({"deleted": deleted, "freed_mb": round(freed / 1024 / 1024, 1)})
 
 
+@app.route("/api/ollama/test", methods=["POST"])
+@require_auth
+def api_ollama_test():
+    """Envoie un message texte simple à ollama.com pour tester la connectivité serveur."""
+    data = request.get_json(force=True) or {}
+    api_key = data.get("api_key", "")
+    model = data.get("model_name", "llava")
+    if not api_key:
+        return jsonify({"ok": False, "error": "Clé API manquante"})
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "Réponds juste 'OK' en un mot."}],
+        "stream": False,
+    }
+    try:
+        resp = requests.post("https://ollama.com/api/chat", json=payload, headers=headers, timeout=20)
+        resp.raise_for_status()
+        reply = resp.json().get("message", {}).get("content", "")
+        return jsonify({"ok": True, "reply": reply})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route("/api/ollama/config", methods=["GET", "POST"])
 @require_auth
 def api_ollama_config():
