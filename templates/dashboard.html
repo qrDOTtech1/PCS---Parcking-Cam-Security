@@ -446,22 +446,14 @@ Add Camera / Ajouter un appareil
                     <p class="text-sm text-gray-500 mt-1">Analyse automatique de vos caméras par un modèle de vision Ollama — local ou cloud.</p>
                 </div>
                 <div class="p-6 space-y-4">
-                    <!-- URL + clé API -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">URL Ollama</label>
-                            <input type="text" id="ollama-url"
-                                value="{{ ollama_cfg.base_url if ollama_cfg else 'https://ollama.com' }}"
-                                placeholder="https://ollama.com  ou  http://localhost:11434"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-purple-300 focus:border-purple-400">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Clé API (Bearer)</label>
-                            <input type="password" id="ollama-key"
-                                value="{{ ollama_cfg.api_key if ollama_cfg else '' }}"
-                                placeholder="ollama_... (vide si local)"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-purple-300 focus:border-purple-400">
-                        </div>
+                    <!-- Clé API cloud -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Clé API Ollama Cloud</label>
+                        <input type="password" id="ollama-key"
+                            value="{{ ollama_cfg.api_key if ollama_cfg else '' }}"
+                            placeholder="ollama_xxxxxxxxxxxxxxxx"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-purple-300 focus:border-purple-400">
+                        <p class="text-xs text-gray-400 mt-1">Créez votre clé sur <a href="https://ollama.com/settings/keys" target="_blank" class="text-purple-600 hover:underline">ollama.com/settings/keys</a> — le fetch des modèles se fait depuis votre navigateur, pas le serveur.</p>
                     </div>
 
                     <!-- Modèle -->
@@ -523,11 +515,11 @@ Add Camera / Ajouter un appareil
                     </div>
 
                     <p class="text-xs text-gray-400">
-                        Les modèles vision recommandés : <code class="bg-gray-100 px-1 rounded">llava</code>,
+                        Modèles vision recommandés (marqués 👁️) : <code class="bg-gray-100 px-1 rounded">llava</code>,
                         <code class="bg-gray-100 px-1 rounded">llava-phi3</code>,
                         <code class="bg-gray-100 px-1 rounded">moondream</code>,
-                        <code class="bg-gray-100 px-1 rounded">minicpm-v</code>.<br>
-                        Ollama cloud : créez une clé sur <a href="https://ollama.com/settings/keys" target="_blank" class="text-purple-600 hover:underline">ollama.com/settings/keys</a>.
+                        <code class="bg-gray-100 px-1 rounded">minicpm-v</code>.
+                        Le serveur Railway utilise la clé sauvegardée pour envoyer les frames au moment du récap.
                     </p>
                 </div>
             </div>
@@ -1428,33 +1420,42 @@ Add Camera / Ajouter un appareil
             }
         }
 
-        // ── Ollama Vision ─────────────────────────────────────────────
+        // ── Ollama Vision (fetch navigateur → ollama.com directement) ──
         function loadOllamaModels() {
-            const url = document.getElementById('ollama-url').value.trim();
             const key = document.getElementById('ollama-key').value.trim();
+            if (!key) { alert('Entrez votre clé API Ollama d\'abord.'); return; }
             const sel = document.getElementById('ollama-model');
+            const saved = sel.value;
             sel.innerHTML = '<option>Chargement...</option>';
-            fetch('/api/ollama/models?url=' + encodeURIComponent(url) + '&key=' + encodeURIComponent(key))
-                .then(r => r.json())
-                .then(data => {
-                    if (data.error) { sel.innerHTML = '<option>Erreur: ' + data.error + '</option>'; return; }
-                    const saved = sel.dataset.saved || '';
-                    sel.innerHTML = '';
-                    (data.models || []).forEach(m => {
-                        const opt = document.createElement('option');
-                        opt.value = m.name;
-                        opt.textContent = m.name + (m.vision ? ' 👁️' : '');
-                        if (m.name === saved) opt.selected = true;
-                        sel.appendChild(opt);
-                    });
-                    if (!sel.value && data.models.length) sel.value = data.models[0].name;
-                })
-                .catch(e => { sel.innerHTML = '<option>Erreur réseau</option>'; console.error(e); });
+            // Fetch direct depuis le navigateur — pas de DNS Railway
+            fetch('https://ollama.com/api/tags', {
+                headers: { 'Authorization': 'Bearer ' + key }
+            })
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(data => {
+                const VISION = ['llava','bakllava','moondream','minicpm','llava-phi','llava-llama','gemma3','mistral-small3','cogvlm','qwen2-vl'];
+                const raw = data.models || [];
+                const models = raw.map(m => ({
+                    name: m.name || m,
+                    vision: VISION.some(kw => (m.name || m).toLowerCase().includes(kw))
+                })).sort((a,b) => (b.vision - a.vision) || a.name.localeCompare(b.name));
+                sel.innerHTML = '';
+                if (!models.length) { sel.innerHTML = '<option>Aucun modèle disponible</option>'; return; }
+                models.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m.name;
+                    opt.textContent = m.name + (m.vision ? ' 👁️' : '');
+                    if (m.name === saved) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+                if (!sel.value) sel.value = models[0].name;
+            })
+            .catch(e => { sel.innerHTML = '<option>Erreur: ' + e.message + '</option>'; console.error(e); });
         }
 
         function saveOllamaConfig() {
             const payload = {
-                base_url: document.getElementById('ollama-url').value.trim(),
+                base_url: 'https://ollama.com',
                 api_key: document.getElementById('ollama-key').value.trim(),
                 model_name: document.getElementById('ollama-model').value,
                 recap_interval: parseInt(document.getElementById('ollama-interval').value),
@@ -1470,12 +1471,6 @@ Add Camera / Ajouter un appareil
             .then(d => { if (d.ok) alert('Configuration Ollama sauvegardée ✓'); else alert('Erreur: ' + (d.error || 'unknown')); })
             .catch(e => alert('Erreur: ' + e));
         }
-
-        // Mémoriser le modèle sauvegardé pour la restaurer après loadOllamaModels()
-        (function() {
-            const sel = document.getElementById('ollama-model');
-            if (sel) sel.dataset.saved = sel.value;
-        })();
 
         // Fallback polling 5s — uniquement si SocketIO n'a pas livré de frame
         setInterval(() => {

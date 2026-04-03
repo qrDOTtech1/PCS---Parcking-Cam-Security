@@ -605,7 +605,7 @@ def create_tables():
                                     "stream": False,
                                 }
                                 resp = requests.post(
-                                    f"{cfg.base_url.rstrip('/')}/api/chat",
+                                    "https://ollama.com/api/chat",
                                     json=payload,
                                     headers=headers,
                                     timeout=30,
@@ -1194,33 +1194,23 @@ def api_ollama_config():
     return jsonify({"ok": True})
 
 
-@app.route("/api/ollama/models")
+@app.route("/api/ollama/vision_models")
 @require_auth
-def api_ollama_models():
-    """Récupère la liste des modèles depuis l'instance Ollama de l'utilisateur."""
-    base_url = request.args.get("url", "https://ollama.com").rstrip("/")
-    api_key = request.args.get("key", "")
-    headers = {}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    # Modèles connus pour supporter la vision
+def api_ollama_vision_models():
+    """Filtre côté serveur les modèles vision dans la liste brute envoyée par le client."""
+    data = request.get_json(force=True) or {}
+    raw_models = data.get("models", [])
     VISION_KEYWORDS = {
         "llava", "bakllava", "moondream", "minicpm", "llava-phi",
         "llava-llama", "gemma3", "mistral-small3", "cogvlm", "qwen2-vl",
     }
-    try:
-        resp = requests.get(f"{base_url}/api/tags", headers=headers, timeout=10)
-        resp.raise_for_status()
-        raw_models = resp.json().get("models", [])
-        models = []
-        for m in raw_models:
-            name = m.get("name", "")
-            vision = any(kw in name.lower() for kw in VISION_KEYWORDS)
-            models.append({"name": name, "vision": vision})
-        models.sort(key=lambda x: (not x["vision"], x["name"]))
-        return jsonify({"models": models})
-    except Exception as e:
-        return jsonify({"error": str(e), "models": []}), 200
+    models = []
+    for m in raw_models:
+        name = m.get("name", "") if isinstance(m, dict) else str(m)
+        vision = any(kw in name.lower() for kw in VISION_KEYWORDS)
+        models.append({"name": name, "vision": vision})
+    models.sort(key=lambda x: (not x["vision"], x["name"]))
+    return jsonify({"models": models})
 
 
 @app.route("/api/camera/status/<int:camera_id>")
