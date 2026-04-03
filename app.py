@@ -74,6 +74,13 @@ RECORDING_LISTS = {}       # camera_id -> {files, sd_total, sd_used, updated_at}
 CAMERA_COMMANDS = {}       # camera_id -> deque of pending commands
 PENDING_LAST_SEEN = {}     # camera_id -> datetime (flush async every 60s)
 
+# ── Enregistrements serveur (/app/data/rec) ───────────────────────────
+import struct
+REC_DIR       = "/app/data/rec"    # monté sur le volume Railway
+REC_MAX_BYTES = 700 * 1024 * 1024  # 700 MB max par caméra
+REC_WRITE_Q   = deque(maxlen=300)  # (cam_id, frame_bytes, datetime)
+_rec_handles  = {}                 # cam_id -> (file_handle, hour_key)
+
 app = Flask(__name__)
 app.secret_key = os.environ.get(
     "FLASK_SECRET_KEY",
@@ -497,6 +504,62 @@ def create_tables():
 
     eventlet.spawn(_flush_last_seen)
 
+    # ── Greenlet : écriture enregistrements sur disque ────────────────
+    def _rec_writer():
+        os.makedirs(REC_DIR, exist_ok=True)
+        while True:
+            eventlet.sleep(0)
+            if not REC_WRITE_Q:
+                eventlet.sleep(0.05)
+                continue
+            try:
+                cam_id, frame_data, ts = REC_WRITE_Q.popleft()
+            except IndexError:
+                continue
+            try:
+                hour_key = ts.strftime("%Y-%m-%d_%H")
+                cam_dir  = os.path.join(REC_DIR, str(cam_id))
+                os.makedirs(cam_dir, exist_ok=True)
+                filepath = os.path.join(cam_dir, f"{hour_key}.pcs")
+                handle, cur_key = _rec_handles.get(cam_id, (None, None))
+                if cur_key != hour_key:
+                    if handle:
+                        try: handle.flush(); handle.close()
+                        except Exception: pass
+                    handle = open(filepath, "ab")
+                    _rec_handles[cam_id] = (handle, hour_key)
+                handle.write(struct.pack("<I", len(frame_data)))
+                handle.write(frame_data)
+            except Exception as e:
+                logger.warning(f"[RecWriter] error cam={cam_id}: {e}")
+
+    eventlet.spawn(_rec_writer)
+
+    # ── Greenlet : nettoyage automatique toutes les 10 min ────────────
+    def _rec_cleanup():
+        while True:
+            eventlet.sleep(600)
+            if not os.path.exists(REC_DIR):
+                continue
+            try:
+                for cam_dir_name in os.listdir(REC_DIR):
+                    cam_dir = os.path.join(REC_DIR, cam_dir_name)
+                    if not os.path.isdir(cam_dir):
+                        continue
+                    files = sorted(f for f in os.listdir(cam_dir) if f.endswith(".pcs"))
+                    total = sum(os.path.getsize(os.path.join(cam_dir, f)) for f in files)
+                    while total > REC_MAX_BYTES and len(files) > 1:
+                        oldest = files.pop(0)
+                        path = os.path.join(cam_dir, oldest)
+                        size = os.path.getsize(path)
+                        os.remove(path)
+                        total -= size
+                        logger.info(f"[RecClean] deleted {path} ({size//1024} KB)")
+            except Exception as e:
+                logger.warning(f"[RecClean] error: {e}")
+
+    eventlet.spawn(_rec_cleanup)
+
 
 def get_max_roboflow_models(user):
     mode = getattr(user, "subscription_mode", "standard") or "standard"
@@ -668,6 +731,7 @@ def _store_frame(cam_id, frame_data):
     FRAME_SEQUENCES[cam_id] += 1
     FRAME_ETAGS[cam_id] = hashlib.md5(frame_data).hexdigest()
     PENDING_LAST_SEEN[cam_id] = now
+    REC_WRITE_Q.append((cam_id, frame_data, now))
 
 
 @app.route("/stream_upload", methods=["POST"])
@@ -856,6 +920,119 @@ def api_recordings(camera_id):
         return jsonify({"error": "Not found"}), 404
     data = RECORDING_LISTS.get(camera_id, {"files": [], "updated_at": None})
     return jsonify(data)
+
+
+# ════════════════════════════════════════════════════════════════════
+# ENREGISTREMENTS SERVEUR — lecture/téléchargement/suppression
+# ════════════════════════════════════════════════════════════════════
+
+@app.route("/api/srv_recordings/<int:camera_id>")
+@require_auth
+def api_srv_recordings(camera_id):
+    """Liste les fichiers .pcs enregistrés côté serveur pour cette caméra."""
+    camera = Camera.query.filter_by(id=camera_id, user_id=session["user_id"]).first()
+    if not camera:
+        return jsonify({"error": "Not found"}), 404
+    cam_dir = os.path.join(REC_DIR, str(camera_id))
+    if not os.path.exists(cam_dir):
+        return jsonify({"files": []})
+    files = []
+    for fname in sorted(os.listdir(cam_dir), reverse=True):
+        if fname.endswith(".pcs"):
+            path = os.path.join(cam_dir, fname)
+            files.append({"name": fname, "size": os.path.getsize(path)})
+    return jsonify({"files": files})
+
+
+@app.route("/srv_recording/stream/<int:camera_id>/<path:filename>")
+@require_auth
+def srv_recording_stream(camera_id, filename):
+    """Lit un fichier .pcs et le sert en flux MJPEG (lecture dans le navigateur)."""
+    camera = Camera.query.filter_by(id=camera_id, user_id=session["user_id"]).first()
+    if not camera:
+        return "Unauthorized", 401
+    safe = os.path.basename(filename)
+    filepath = os.path.join(REC_DIR, str(camera_id), safe)
+    if not os.path.exists(filepath):
+        return "Not found", 404
+
+    def generate():
+        with open(filepath, "rb") as f:
+            while True:
+                hdr = f.read(4)
+                if len(hdr) < 4:
+                    break
+                size = struct.unpack("<I", hdr)[0]
+                if size == 0 or size > 200_000:
+                    break
+                frame = f.read(size)
+                if len(frame) < size:
+                    break
+                yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+                       + frame + b"\r\n")
+                eventlet.sleep(0.1)   # ~10 fps playback
+
+    return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.route("/srv_recording/dl/<int:camera_id>/<path:filename>")
+@require_auth
+def srv_recording_dl(camera_id, filename):
+    """Téléchargement brut d'un fichier .pcs."""
+    camera = Camera.query.filter_by(id=camera_id, user_id=session["user_id"]).first()
+    if not camera:
+        return "Unauthorized", 401
+    safe = os.path.basename(filename)
+    filepath = os.path.join(REC_DIR, str(camera_id), safe)
+    if not os.path.exists(filepath):
+        return "Not found", 404
+    return send_file(filepath, as_attachment=True, download_name=safe)
+
+
+@app.route("/api/srv_recordings/<int:camera_id>/delete_all", methods=["POST"])
+@require_auth
+def srv_recordings_delete_all(camera_id):
+    """Supprime TOUS les enregistrements serveur de cette caméra."""
+    camera = Camera.query.filter_by(id=camera_id, user_id=session["user_id"]).first()
+    if not camera:
+        return jsonify({"error": "Not found"}), 404
+    cam_dir = os.path.join(REC_DIR, str(camera_id))
+    deleted, freed = 0, 0
+    if os.path.exists(cam_dir):
+        # Fermer le handle ouvert si présent
+        handle, _ = _rec_handles.pop(camera_id, (None, None))
+        if handle:
+            try: handle.close()
+            except Exception: pass
+        for fname in os.listdir(cam_dir):
+            if fname.endswith(".pcs"):
+                path = os.path.join(cam_dir, fname)
+                freed += os.path.getsize(path)
+                os.remove(path)
+                deleted += 1
+    return jsonify({"deleted": deleted, "freed_mb": round(freed / 1024 / 1024, 1)})
+
+
+@app.route("/api/srv_recordings/<int:camera_id>/delete_all_cameras", methods=["POST"])
+@require_auth
+def srv_recordings_delete_all_cameras(user_id=None):
+    """Supprime TOUS les enregistrements serveur de TOUTES les caméras de l'utilisateur."""
+    cameras = Camera.query.filter_by(user_id=session["user_id"]).all()
+    deleted, freed = 0, 0
+    for camera in cameras:
+        cam_dir = os.path.join(REC_DIR, str(camera.id))
+        handle, _ = _rec_handles.pop(camera.id, (None, None))
+        if handle:
+            try: handle.close()
+            except Exception: pass
+        if os.path.exists(cam_dir):
+            for fname in os.listdir(cam_dir):
+                if fname.endswith(".pcs"):
+                    path = os.path.join(cam_dir, fname)
+                    freed += os.path.getsize(path)
+                    os.remove(path)
+                    deleted += 1
+    return jsonify({"deleted": deleted, "freed_mb": round(freed / 1024 / 1024, 1)})
 
 
 @app.route("/api/camera/status/<int:camera_id>")

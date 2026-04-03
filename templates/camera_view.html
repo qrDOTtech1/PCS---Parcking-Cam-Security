@@ -121,6 +121,34 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Enregistrements Serveur -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
+                        <h2 class="font-bold text-gray-900 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7"/>
+                            </svg>
+                            Enregistrements Serveur
+                        </h2>
+                        <div class="flex gap-2">
+                            <button onclick="deleteSrvAll()" class="text-xs text-red-500 hover:text-red-700 transition font-medium">🗑 Tout supprimer</button>
+                            <button onclick="loadSrvRecordings()" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition font-medium">Charger</button>
+                        </div>
+                    </div>
+                    <div id="srvRecList" class="p-4 space-y-2">
+                        <p class="text-sm text-gray-400 text-center">Cliquez "Charger" pour voir les enregistrements serveur.</p>
+                    </div>
+                    <div id="srvPlayer" class="hidden border-t border-gray-100">
+                        <div class="bg-gray-900 aspect-video">
+                            <img id="srvPlayerImg" class="w-full h-full object-contain" alt="Lecture serveur">
+                        </div>
+                        <div class="px-4 py-2 bg-gray-50 flex justify-between items-center">
+                            <span id="srvPlayerTitle" class="text-xs text-gray-600 font-medium"></span>
+                            <button onclick="srvPlayerStop()" class="text-xs text-red-600 hover:text-red-700">⏹ Arrêter</button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
                 <!-- Historique des connexions -->
@@ -519,6 +547,64 @@
 
         // Rejoindre la room pour les alertes temps réel
         socket.emit('client_watch', {camera_id: CAMERA_ID});
+
+        // ── Enregistrements Serveur ────────────────────────────────
+        function loadSrvRecordings() {
+            const el = document.getElementById('srvRecList');
+            el.innerHTML = '<p class="text-sm text-gray-400 text-center py-3">Chargement...</p>';
+            fetch('/api/srv_recordings/' + CAMERA_ID)
+                .then(r => r.json())
+                .then(data => renderSrvRecordings(data.files || []))
+                .catch(e => {
+                    el.innerHTML = '<p class="text-sm text-red-500 text-center py-3">Erreur: ' + e + '</p>';
+                });
+        }
+
+        function renderSrvRecordings(files) {
+            const el = document.getElementById('srvRecList');
+            if (!files.length) {
+                el.innerHTML = '<p class="text-sm text-gray-400 text-center py-3">Aucun enregistrement serveur.</p>';
+                return;
+            }
+            el.innerHTML = '';
+            files.forEach(f => {
+                const display = f.name.replace('_', ' ').replace('.pcs', 'h');
+                const size    = (f.size / 1048576).toFixed(1) + ' Mo';
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between p-2 bg-gray-50 rounded-lg';
+                div.innerHTML =
+                    '<div><span class="text-sm font-medium text-gray-700">🖥️ ' + display + '</span>' +
+                    '<span class="text-xs text-gray-400 ml-2">' + size + '</span></div>' +
+                    '<div class="flex gap-1">' +
+                        '<button onclick="srvPlay(\'' + f.name + '\')" class="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700">▶ Lire</button>' +
+                        '<a href="/srv_recording/dl/' + CAMERA_ID + '/' + f.name + '" class="text-xs bg-gray-600 text-white px-2 py-1 rounded hover:bg-gray-700">⬇ DL</a>' +
+                    '</div>';
+                el.appendChild(div);
+            });
+        }
+
+        function srvPlay(filename) {
+            document.getElementById('srvPlayer').classList.remove('hidden');
+            document.getElementById('srvPlayerTitle').textContent = filename.replace('_', ' ').replace('.pcs', 'h');
+            document.getElementById('srvPlayerImg').src = '/srv_recording/stream/' + CAMERA_ID + '/' + filename;
+        }
+
+        function srvPlayerStop() {
+            document.getElementById('srvPlayerImg').src = '';
+            document.getElementById('srvPlayer').classList.add('hidden');
+        }
+
+        function deleteSrvAll() {
+            if (!confirm('Supprimer TOUS les enregistrements serveur de cette caméra ?')) return;
+            fetch('/api/srv_recordings/' + CAMERA_ID + '/delete_all', {method: 'POST'})
+                .then(r => r.json())
+                .then(data => {
+                    const msg = 'Supprimé : ' + (data.deleted || 0) + ' fichier(s), ' + (data.freed_mb || 0).toFixed(1) + ' Mo libérés.';
+                    document.getElementById('srvRecList').innerHTML = '<p class="text-sm text-gray-500 text-center py-3">' + msg + '</p>';
+                    srvPlayerStop();
+                })
+                .catch(e => alert('Erreur: ' + e));
+        }
     </script>
 </body>
 </html>

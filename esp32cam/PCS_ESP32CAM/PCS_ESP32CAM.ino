@@ -1,24 +1,17 @@
 /*
  * PCS_ESP32CAM.ino
- * ParkingCamSecurity — Firmware ESP32-CAM (AI Thinker OV2640)
+ * ParkingCamSecurity — Firmware ESP32-CAM v2 (AI Thinker OV2640/OV3660)
  *
- * Fonctionnalités :
- *  - Page de configuration web (WiFi, Camera ID, rotation, qualité, FPS)
- *  - Stream MJPEG vers le serveur PCS via HTTP POST
- *  - Enregistrement SD carte 24h (fichiers horaires, suppression auto)
- *  - Interface web pour visualiser et télécharger les fragments par heure
+ * Architecture 3 tâches FreeRTOS :
+ *   1. camTask     — capture continue, non-bloquante
+ *   2. streamTask  — envoi HTTP POST au serveur (limité en FPS)
+ *   3. sdTask      — écriture SD en lot, non-bloquante
  *
- * Librairies requises (Arduino IDE) :
- *  - ESP32 Arduino Core (Espressif)  — inclus : WiFi, WebServer, Preferences, SD_MMC, esp_camera
- *
- * SD recommandée : 16 Go (≈8.6 Go / 24h à QVGA quality=12 10fps)
- *
- * MODE CONFIG : maintenir GPIO 13 appuyé au démarrage
- *   → AP "PCS-Config" sans mot de passe → ouvrir http://192.168.4.1
- *
- * MODE NORMAL : se connecte au WiFi configuré, stream + enregistre
- *   → Config accessible sur http://<IP_ESP>/
- *   → Enregistrements sur http://<IP_ESP>/recordings
+ * Optimisations anti-FB-overflow :
+ *   - fb_count = 2 (pas plus : chaque frame occupe ~40KB en PSRAM)
+ *   - Files d'attente entre tâches (pas de flush synchrone)
+ *   - PSRAM pour les buffers de frame
+ *   - Intervalle de capture + élégant (pas de busy-wait)
  */
 
 #include "esp_camera.h"
@@ -30,8 +23,8 @@
 #include "time.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/semphr.h"
-#include <algorithm>   // std::swap
+#include "freertos/queue.h"
+
 
 // ═══════════════════════════════════════════════
 // PINS — AI Thinker ESP32-CAM
@@ -53,24 +46,22 @@
 #define HREF_GPIO_NUM   23
 #define PCLK_GPIO_NUM   22
 
-// Bouton config : GPIO 13 appuyé au boot → mode AP (optionnel)
 #define CONFIG_BTN_PIN  13
 
-// Double-reset detection via RTC memory (persist across soft resets)
 RTC_DATA_ATTR int  rtcResetCount = 0;
 RTC_DATA_ATTR uint32_t rtcResetMs = 0;
 
 // ═══════════════════════════════════════════════
-// CONFIGURATION
+// CONFIG
 // ═══════════════════════════════════════════════
 struct Config {
   char wifi_ssid[64]   = "";
   char wifi_pass[64]   = "";
   char camera_id[33]   = "esp32cam-001";
   char server_url[128] = "https://web-production-10852.up.railway.app";
-  int  rotation        = 0;   // 0=normal 1=180° 2=miroir-H 3=miroir-V
-  int  quality         = 8;   // JPEG quality (0-63, bas = meilleure qualité)
-  int  fps_limit       = 15;  // FPS max envoyés au serveur
+  int  rotation        = 0;
+  int  quality         = 18;
+  int  fps_limit      = 5;
 };
 
 Config cfg;
@@ -81,15 +72,37 @@ bool configMode = false;
 bool sdReady    = false;
 bool ntpReady   = false;
 
-SemaphoreHandle_t camMutex;
+// ═══════════════════════════════════════════════
+// BUFFERS PRÉ-ALLOUÉS — zéro malloc par frame
+// ═══════════════════════════════════════════════
+#define FRAME_MAX   60000   // 60 KB : VGA quality 12 ≈ 15-35 KB
+#define N_SBUF      3       // slots stream (ping-pong-pong)
+#define N_SDBUF     6       // slots SD pool
 
-// Fichier d'enregistrement en cours
-File    recFile;
-String  currentHourKey = "";   // "YYYY-MM-DD_HH"
-uint32_t recFrameCount = 0;
+// ── Stream : dernière frame disponible ───────────────────────────
+static uint8_t          *sBuf[N_SBUF]  = {};
+static size_t            sLen[N_SBUF]  = {};
+static volatile int      sCapIdx       = 0;    // camTask écrit ici
+static volatile int      sLatestIdx    = -1;   // dernier slot complet
+static SemaphoreHandle_t sMux          = NULL; // protège sLatestIdx + copie
+
+// Buffer HTTP pour streamTask (alloué une fois dans la tâche)
+static uint8_t *httpBuf = NULL;
+
+// ── SD pool : pré-alloué, jamais free/malloc ──────────────────────
+struct FrameItem { uint8_t *data; size_t len; };
+static uint8_t      *sdPool[N_SDBUF] = {};
+static QueueHandle_t qSdFree  = NULL;   // slots libres
+static QueueHandle_t qSdReady = NULL;   // slots remplis
+
+// ── Fichier SD en cours ───────────────────────────────────────────
+static File     recFile;
+static String   currentHourKey = "";
+static uint32_t recFrameCount  = 0;
+static unsigned long lastSdFlush = 0;
 
 // ═══════════════════════════════════════════════
-// HTML — Page de configuration
+// HTML — Config
 // ═══════════════════════════════════════════════
 const char CONFIG_HTML[] PROGMEM = R"HTML(
 <!DOCTYPE html>
@@ -108,8 +121,7 @@ label{display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:4
 input,select{width:100%;padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;background:#f8fafc;margin-bottom:4px;outline:none;transition:border .15s}
 input:focus,select:focus{border-color:#3b82f6;background:#fff}
 .hint{font-size:11px;color:#94a3b8;margin-bottom:14px}
-.row{display:flex;gap:10px}
-.row>div{flex:1}
+.row{display:flex;gap:10px}.row>div{flex:1}
 button{width:100%;background:#2563eb;color:#fff;border:none;padding:13px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;margin-top:10px;transition:background .15s}
 button:hover{background:#1d4ed8}
 .saved{background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px;display:none}
@@ -124,9 +136,9 @@ button:hover{background:#1d4ed8}
   <div class="saved" id="ok">✓ Sauvegardé — redémarrage en cours...</div>
   <form method="POST" action="/save" onsubmit="document.getElementById('ok').style.display='block'">
     <h2>Réseau WiFi</h2>
-    <label>SSID (nom du réseau)</label>
+    <label>SSID</label>
     <input name="ssid" value="%SSID%" placeholder="MonReseau" required autocomplete="off" autocapitalize="none">
-    <div class="hint">Fonctionne avec les réseaux cachés (hidden SSID) — entrez le nom exact</div>
+    <div class="hint">Réseaux cachés supportés — entrez le nom exact</div>
     <label>Mot de passe</label>
     <input name="pass" type="password" value="%PASS%" placeholder="••••••••" autocomplete="new-password">
     <div class="hint">Laisser vide si réseau ouvert</div>
@@ -134,7 +146,7 @@ button:hover{background:#1d4ed8}
     <h2>Identité caméra</h2>
     <label>Camera ID (= API Key)</label>
     <input name="cam_id" value="%CAM_ID%" placeholder="parking-entree-01" maxlength="32" required pattern="[a-zA-Z0-9_-]+" autocapitalize="none">
-    <div class="hint">Doit correspondre à la clé API saisie dans le dashboard PCS</div>
+    <div class="hint">Correspond à la clé API du dashboard PCS</div>
     <label>URL du serveur PCS</label>
     <input name="server" value="%SERVER%" placeholder="https://..." required>
 
@@ -142,7 +154,7 @@ button:hover{background:#1d4ed8}
     <label>Rotation / Orientation</label>
     <select name="rotation">
       <option value="0" %R0%>Normal (0°)</option>
-      <option value="1" %R1%>180° retourné (caméra à l'envers)</option>
+      <option value="1" %R1%>180° retourné</option>
       <option value="2" %R2%>Miroir horizontal</option>
       <option value="3" %R3%>Miroir vertical</option>
     </select>
@@ -150,33 +162,32 @@ button:hover{background:#1d4ed8}
       <div>
         <label>Qualité JPEG</label>
         <select name="quality">
-          <option value="6"  %Q6% >Ultra (6) — ~20 Go/24h</option>
-          <option value="8"  %Q8% >Haute  (8) — ~14 Go/24h</option>
-          <option value="12" %Q12%>Normale (12) — ~9 Go/24h</option>
-          <option value="20" %Q20%>Économe (20) — ~4 Go/24h</option>
+          <option value="6"  %Q6% >Ultra (6)</option>
+          <option value="8"  %Q8% >Haute (8)</option>
+          <option value="12" %Q12%>Normale (12)</option>
+          <option value="18" %Q18% selected>Économe (18)</option>
+          <option value="20" %Q20%>Très économe (20)</option>
+          <option value="25" %Q25%>Minimum (25)</option>
         </select>
       </div>
       <div>
         <label>FPS serveur</label>
         <select name="fps">
-          <option value="5"  %F5% >5 fps</option>
+          <option value="1"  %F1% >1 fps</option>
+          <option value="2"  %F2% >2 fps</option>
+          <option value="5"  %F5% selected>5 fps</option>
           <option value="10" %F10%>10 fps</option>
-          <option value="15" %F15%>15 fps</option>
-          <option value="20" %F20%>20 fps</option>
         </select>
       </div>
     </div>
     <button type="submit">Sauvegarder et redémarrer</button>
   </form>
   <a class="link" href="/recordings">📼 Enregistrements SD</a>
-  <div class="ip">IP : %IP%</div>
+  <div class="ip">IP : %IP% | Mem : %MEM% KB | PSRAM : %PSRAM% KB</div>
 </div>
 </body></html>
 )HTML";
 
-// ═══════════════════════════════════════════════
-// HTML — Page enregistrements (header + footer)
-// ═══════════════════════════════════════════════
 const char REC_HTML_HEAD[] PROGMEM = R"HTML(
 <!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -199,7 +210,7 @@ h1{font-size:20px;font-weight:800;color:#1e40af;margin-bottom:4px}
 </style></head><body>
 <a class="back" href="/">← Configuration</a>
 <h1>Enregistrements SD</h1>
-<div class="sub">Dernières 24h — cliquez Play pour visionner dans le navigateur ou Télécharger</div>
+<div class="sub">Dernières 24h — Play pour visionner, Télécharger pour extraire</div>
 <div class="grid">
 )HTML";
 
@@ -208,7 +219,7 @@ const char REC_HTML_FOOT[] PROGMEM = R"HTML(
 )HTML";
 
 // ═══════════════════════════════════════════════
-// GESTION CONFIGURATION
+// CONFIG (Preferences)
 // ═══════════════════════════════════════════════
 void loadConfig() {
   prefs.begin("pcs", true);
@@ -217,28 +228,29 @@ void loadConfig() {
   strlcpy(cfg.camera_id,  prefs.getString("cam_id",  "esp32cam-001").c_str(), sizeof(cfg.camera_id));
   strlcpy(cfg.server_url, prefs.getString("server",  "https://web-production-10852.up.railway.app").c_str(), sizeof(cfg.server_url));
   cfg.rotation  = prefs.getInt("rotation", 0);
-  cfg.quality   = prefs.getInt("quality",  12);
-  cfg.fps_limit = prefs.getInt("fps",      10);
+  cfg.quality   = prefs.getInt("quality", 18);
+  cfg.fps_limit = prefs.getInt("fps", 5);
   prefs.end();
 }
 
 void saveConfig() {
   prefs.begin("pcs", false);
-  prefs.putString("ssid",    cfg.wifi_ssid);
-  prefs.putString("pass",    cfg.wifi_pass);
-  prefs.putString("cam_id",  cfg.camera_id);
-  prefs.putString("server",  cfg.server_url);
-  prefs.putInt("rotation",   cfg.rotation);
-  prefs.putInt("quality",    cfg.quality);
-  prefs.putInt("fps",        cfg.fps_limit);
+  prefs.putString("ssid",   cfg.wifi_ssid);
+  prefs.putString("pass",   cfg.wifi_pass);
+  prefs.putString("cam_id", cfg.camera_id);
+  prefs.putString("server", cfg.server_url);
+  prefs.putInt("rotation",  cfg.rotation);
+  prefs.putInt("quality",   cfg.quality);
+  prefs.putInt("fps",       cfg.fps_limit);
   prefs.end();
 }
 
 // ═══════════════════════════════════════════════
-// INIT CAMÉRA
+// CAMERA INIT
 // ═══════════════════════════════════════════════
 bool initCamera() {
   camera_config_t config;
+  memset(&config, 0, sizeof(config));
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer   = LEDC_TIMER_0;
   config.pin_d0       = Y2_GPIO_NUM;
@@ -257,56 +269,59 @@ bool initCamera() {
   config.pin_sscb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn     = PWDN_GPIO_NUM;
   config.pin_reset    = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 20000000;
+  config.xclk_freq_hz = 8000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size   = FRAMESIZE_VGA;   // 640x480 — bonne qualité
+  config.frame_size   = FRAMESIZE_VGA;
   config.jpeg_quality = cfg.quality;
-  config.fb_count     = 3;               // 3 buffers pour éviter FB-OVF
+  config.fb_count     = 2;
+  config.fb_location  = CAMERA_FB_IN_PSRAM;
+  config.grab_mode    = CAMERA_GRAB_WHEN_EMPTY;
 
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
-    Serial.printf("Camera init failed: 0x%x\n", err);
+    Serial.printf("[CAM] Init failed: 0x%x\n", err);
     return false;
   }
 
-  // Réglages spécifiques au capteur
   sensor_t *s = esp_camera_sensor_get();
+  if (!s) return false;
 
-  // OV3660 : vflip natif + amélioration image
+  Serial.printf("[CAM] Sensor PID: 0x%02x\n", s->id.PID);
+
   if (s->id.PID == 0x3660) {
-    Serial.println("Capteur OV3660 détecté");
-    s->set_vflip(s, 1);        // OV3660 est monté à l'envers sur AI Thinker
-    s->set_brightness(s, 1);   // légèrement plus lumineux
+    Serial.println("[CAM] OV3660 — vflip natif");
+    s->set_vflip(s, 1);
+    s->set_brightness(s, 1);
     s->set_saturation(s, 0);
+  } else if (s->id.PID == 0x2640) {
+    Serial.println("[CAM] OV2640 détecté");
   }
 
-  // Appliquer la rotation configurée (surcharge les réglages ci-dessus si besoin)
   switch (cfg.rotation) {
     case 0: s->set_vflip(s, 0); s->set_hmirror(s, 0); break;
-    case 1: s->set_vflip(s, 1); s->set_hmirror(s, 1); break;  // 180°
-    case 2: s->set_vflip(s, 0); s->set_hmirror(s, 1); break;  // miroir H
-    case 3: s->set_vflip(s, 1); s->set_hmirror(s, 0); break;  // miroir V
+    case 1: s->set_vflip(s, 1); s->set_hmirror(s, 1); break;
+    case 2: s->set_vflip(s, 0); s->set_hmirror(s, 1); break;
+    case 3: s->set_vflip(s, 1); s->set_hmirror(s, 0); break;
   }
+
+  Serial.printf("[CAM] Init OK — SVGA q=%d fb=%d\n", cfg.quality, config.fb_count);
   return true;
 }
 
 // ═══════════════════════════════════════════════
-// INIT SD (mode 1-bit pour compatibilité caméra)
+// SD INIT
 // ═══════════════════════════════════════════════
 bool initSD() {
-  if (!SD_MMC.begin("/sdcard", true)) {  // true = 1-bit mode
-    Serial.println("SD mount failed");
+  if (!SD_MMC.begin("/sdcard", true)) {
+    Serial.println("[SD] Mount failed");
     return false;
   }
   if (SD_MMC.cardType() == CARD_NONE) {
-    Serial.println("No SD card");
+    Serial.println("[SD] No card");
     return false;
   }
-  // Créer le dossier d'enregistrements
-  if (!SD_MMC.exists("/rec")) {
-    SD_MMC.mkdir("/rec");
-  }
-  Serial.printf("SD OK — %llu MB\n", SD_MMC.cardSize() / (1024 * 1024));
+  if (!SD_MMC.exists("/rec")) SD_MMC.mkdir("/rec");
+  Serial.printf("[SD] OK — %llu MB\n", SD_MMC.cardSize() / (1024 * 1024));
   return true;
 }
 
@@ -319,11 +334,11 @@ void syncNTP() {
   int tries = 0;
   while (!getLocalTime(&t) && tries++ < 20) delay(500);
   ntpReady = (tries < 20);
-  Serial.printf("NTP: %s\n", ntpReady ? "OK" : "FAIL (heure non sync)");
+  Serial.printf("[NTP] %s\n", ntpReady ? "OK" : "FAIL");
 }
 
 // ═══════════════════════════════════════════════
-// HELPERS — Heure courante
+// HELPERS
 // ═══════════════════════════════════════════════
 String getHourKey() {
   struct tm t;
@@ -337,78 +352,53 @@ String getFilePath(const String &hourKey) {
   return "/rec/" + hourKey + ".pcs";
 }
 
-// Format fichier .pcs : suite de [uint32_t taille][données JPEG]
-void writeFrameToSD(const uint8_t *data, size_t len) {
-  String hourKey = getHourKey();
-
-  // Nouveau fichier si on change d'heure
-  if (hourKey != currentHourKey) {
-    if (recFile) recFile.close();
-    String path = getFilePath(hourKey);
-    recFile = SD_MMC.open(path, FILE_WRITE);
-    currentHourKey = hourKey;
-    recFrameCount  = 0;
-    Serial.println("New recording: " + path);
-
-    // Supprimer les fichiers de plus de 24h
-    
-  }
-
-  if (!recFile) return;
-
-  uint32_t flen = (uint32_t)len;
-  recFile.write((uint8_t*)&flen, 4);
-  recFile.write(data, len);
-  recFile.flush();
-  recFrameCount++;
-}
-
 void purgeOldRecordings() {
   File dir = SD_MMC.open("/rec");
   if (!dir || !dir.isDirectory()) return;
 
-  // On garde max 25 fichiers (1 par heure + 1 en cours)
-  // Chaque fichier = 1h, donc 24 fichiers = 24h
-  struct FileEntry { String name; };
-  FileEntry files[64];
+  static struct Entry { char name[64]; time_t mtime; } files[64];
   int count = 0;
 
   File f = dir.openNextFile();
   while (f && count < 64) {
     if (!f.isDirectory()) {
-      files[count++].name = String(f.name());
+      strlcpy(files[count].name, f.name(), sizeof(files[count].name));
+      files[count].mtime = f.getLastWrite();
+      count++;
     }
+    f.close();
     f = dir.openNextFile();
   }
   dir.close();
 
-  // Tri simple (noms = dates, tri alphabétique = tri chronologique)
-  for (int i = 0; i < count - 1; i++)
-    for (int j = i + 1; j < count; j++)
-      if (files[i].name > files[j].name)
-        std::swap(files[i].name, files[j].name);
-
-  // Supprimer les plus anciens si on dépasse 25 fichiers
-  while (count > 25) {
-    String path = "/rec/" + files[0].name;
-    SD_MMC.remove(path);
-    Serial.println("Purged: " + path);
-    for (int i = 0; i < count - 1; i++) files[i] = files[i + 1];
-    count--;
+  if (count > 30) {
+    for (int i = 0; i < count - 1; i++) {
+      for (int j = i + 1; j < count; j++) {
+        if (files[j].mtime < files[i].mtime) {
+          auto tmp = files[i];
+          files[i] = files[j];
+          files[j] = tmp;
+        }
+      }
+    }
+    for (int i = 0; i < count - 30; i++) {
+      char path[80] = "/rec/";
+      strlcat(path, files[i].name, sizeof(path));
+      SD_MMC.remove(path);
+      Serial.println("[SD] Deleted: " + String(files[i].name));
+    }
   }
 }
 
 // ═══════════════════════════════════════════════
-// SERVEUR WEB — Handlers
+// WEBSERVER handlers
 // ═══════════════════════════════════════════════
-
-// Remplace les placeholders dans le HTML de config
-String buildConfigPage() {
-  String html = FPSTR(CONFIG_HTML);
-  html.replace("%SSID%",   String(cfg.wifi_ssid));
-  html.replace("%PASS%",   String(cfg.wifi_pass));
-  html.replace("%CAM_ID%", String(cfg.camera_id));
-  html.replace("%SERVER%", String(cfg.server_url));
+void handleRoot() {
+  String html = CONFIG_HTML;
+  html.replace("%SSID%",  cfg.wifi_ssid);
+  html.replace("%PASS%",  cfg.wifi_pass);
+  html.replace("%CAM_ID%", cfg.camera_id);
+  html.replace("%SERVER%", cfg.server_url);
   html.replace("%R0%", cfg.rotation == 0 ? "selected" : "");
   html.replace("%R1%", cfg.rotation == 1 ? "selected" : "");
   html.replace("%R2%", cfg.rotation == 2 ? "selected" : "");
@@ -416,17 +406,17 @@ String buildConfigPage() {
   html.replace("%Q6%",  cfg.quality == 6  ? "selected" : "");
   html.replace("%Q8%",  cfg.quality == 8  ? "selected" : "");
   html.replace("%Q12%", cfg.quality == 12 ? "selected" : "");
+  html.replace("%Q18%", cfg.quality == 18 ? "selected" : "");
   html.replace("%Q20%", cfg.quality == 20 ? "selected" : "");
+  html.replace("%Q25%", cfg.quality == 25 ? "selected" : "");
+  html.replace("%F1%",  cfg.fps_limit == 1  ? "selected" : "");
+  html.replace("%F2%",  cfg.fps_limit == 2  ? "selected" : "");
   html.replace("%F5%",  cfg.fps_limit == 5  ? "selected" : "");
   html.replace("%F10%", cfg.fps_limit == 10 ? "selected" : "");
-  html.replace("%F15%", cfg.fps_limit == 15 ? "selected" : "");
-  html.replace("%F20%", cfg.fps_limit == 20 ? "selected" : "");
-  html.replace("%IP%",  WiFi.localIP().toString());
-  return html;
-}
-
-void handleRoot() {
-  webServer.send(200, "text/html", buildConfigPage());
+  html.replace("%IP%",   WiFi.localIP().toString());
+  html.replace("%MEM%",  String(ESP.getFreeHeap() / 1024));
+  html.replace("%PSRAM%", String(ESP.getPsramSize() / 1024));
+  webServer.send(200, "text/html; charset=utf-8", html);
 }
 
 void handleSave() {
@@ -434,190 +424,335 @@ void handleSave() {
     webServer.send(405, "text/plain", "Method Not Allowed");
     return;
   }
-  strlcpy(cfg.wifi_ssid,  webServer.arg("ssid").c_str(),    sizeof(cfg.wifi_ssid));
-  strlcpy(cfg.wifi_pass,  webServer.arg("pass").c_str(),    sizeof(cfg.wifi_pass));
+  strlcpy(cfg.wifi_ssid,  webServer.arg("ssid").c_str(),   sizeof(cfg.wifi_ssid));
+  strlcpy(cfg.wifi_pass,  webServer.arg("pass").c_str(),   sizeof(cfg.wifi_pass));
   strlcpy(cfg.camera_id,  webServer.arg("cam_id").c_str(),  sizeof(cfg.camera_id));
-  strlcpy(cfg.server_url, webServer.arg("server").c_str(),  sizeof(cfg.server_url));
+  strlcpy(cfg.server_url, webServer.arg("server").c_str(), sizeof(cfg.server_url));
   cfg.rotation  = webServer.arg("rotation").toInt();
   cfg.quality   = webServer.arg("quality").toInt();
   cfg.fps_limit = webServer.arg("fps").toInt();
   saveConfig();
-
-  webServer.send(200, "text/html",
-    "<html><body style='font-family:sans-serif;padding:30px'>"
-    "<h2 style='color:#16a34a'>✓ Configuration sauvegardée</h2>"
-    "<p>Redémarrage dans 2 secondes...</p>"
-    "</body></html>");
-  delay(2000);
+  webServer.send(200, "text/html", "<html><body><h2>Config saved — rebooting...</h2>"
+    "<meta http-equiv='refresh' content='2;url=/'></body></html>");
+  delay(500);
   ESP.restart();
 }
 
 void handleRecordings() {
-  String page = FPSTR(REC_HTML_HEAD);
-
   File dir = SD_MMC.open("/rec");
-  bool any = false;
+  String html = REC_HTML_HEAD;
 
-  if (dir && dir.isDirectory()) {
-    // Collecter et trier
-    String names[64];
+  if (!dir || !dir.isDirectory()) {
+    html += "<div class='empty'>Aucun enregistrement</div>";
+  } else {
+    struct Entry { char name[64]; time_t mtime; };
+    Entry files[64];
     int count = 0;
     File f = dir.openNextFile();
     while (f && count < 64) {
-      if (!f.isDirectory()) names[count++] = String(f.name());
+      if (!f.isDirectory()) {
+        strlcpy(files[count].name, f.name(), sizeof(files[count].name));
+        files[count].mtime = f.getLastWrite();
+        count++;
+      }
+      f.close();
       f = dir.openNextFile();
     }
     dir.close();
-    // Tri décroissant (plus récent en premier)
-    for (int i = 0; i < count - 1; i++)
-      for (int j = i + 1; j < count; j++)
-        if (names[i] < names[j]) std::swap(names[i], names[j]);
 
-    for (int i = 0; i < count; i++) {
-      String fname = names[i];
-      // Nom affiché : "2024-01-15 14h00 – 14h59"
-      String display = fname;
-      display.replace("_", " ");
-      display.replace(".pcs", "h00 – ");
-      // Taille
-      String path = "/rec/" + fname;
-      File fi = SD_MMC.open(path);
-      long sz = fi ? fi.size() : 0;
-      if (fi) fi.close();
-      String szStr = sz > 1048576 ? String(sz / 1048576) + " Mo" : String(sz / 1024) + " Ko";
+    for (int i = 0; i < count - 1; i++) {
+      for (int j = i + 1; j < count; j++) {
+        if (files[j].mtime > files[i].mtime) {
+          auto tmp = files[i];
+          files[i] = files[j];
+          files[j] = tmp;
+        }
+      }
+    }
 
-      page += "<div class='card'>";
-      page += "<div class='hour'>📼 " + display + "</div>";
-      page += "<div class='meta'>" + szStr + " · " + String(fname) + "</div>";
-      page += "<div class='btns'>";
-      page += "<a class='btn play' href='/stream?f=" + fname + "'>▶ Play</a>";
-      page += "<a class='btn dl'   href='/dl?f="     + fname + "'>⬇ Télécharger</a>";
-      page += "</div></div>";
-      any = true;
+    if (count == 0) {
+      html += "<div class='empty'>Aucun enregistrement</div>";
+    } else {
+      for (int i = 0; i < count && i < 24; i++) {
+        html += "<div class='card'>";
+        html += "<div class='hour'>" + String(files[i].name + 4) + "</div>";
+        html += "<div class='btns'>";
+        html += "<a class='btn play' href='/play/" + String(files[i].name) + "'>Play</a>";
+        html += "<a class='btn dl' href='/dl/" + String(files[i].name) + "'>Download</a>";
+        html += "</div></div>";
+      }
     }
   }
 
-  if (!any) {
-    page += "<div class='empty'><p>Aucun enregistrement sur la carte SD.</p>"
-            "<p style='margin-top:8px;font-size:12px'>Les fichiers apparaissent heure par heure.</p></div>";
-  }
-
-  page += FPSTR(REC_HTML_FOOT);
-  webServer.send(200, "text/html", page);
+  html += REC_HTML_FOOT;
+  webServer.send(200, "text/html; charset=utf-8", html);
 }
 
-// Lecture d'un fichier .pcs et envoi en MJPEG (lecture directe dans le navigateur)
-void handleStream() {
-  if (!webServer.hasArg("f")) { webServer.send(400, "text/plain", "Missing ?f="); return; }
-  String fname = webServer.arg("f");
-  // Sécurité : pas de path traversal
-  if (fname.indexOf('/') >= 0 || fname.indexOf("..") >= 0) {
-    webServer.send(403, "text/plain", "Forbidden"); return;
-  }
-  String path = "/rec/" + fname;
-  File f = SD_MMC.open(path);
+void handlePlay() {
+  String path = "/" + webServer.uri().substring(6);
+  if (!path.endsWith(".pcs")) { webServer.send(400, "text/plain", "Bad request"); return; }
+  File f = SD_MMC.open(path.c_str(), FILE_READ);
   if (!f) { webServer.send(404, "text/plain", "Not found"); return; }
 
-  WiFiClient client = webServer.client();
-  client.print("HTTP/1.1 200 OK\r\n");
-  client.print("Content-Type: multipart/x-mixed-replace; boundary=frame\r\n");
-  client.print("Cache-Control: no-cache\r\n\r\n");
-
-  while (f.available() >= 4 && client.connected()) {
-    uint32_t flen;
-    f.read((uint8_t*)&flen, 4);
-    if (flen == 0 || flen > 100000) break;
-
-    uint8_t *buf = (uint8_t*)malloc(flen);
-    if (!buf) break;
-    size_t read = f.read(buf, flen);
-
-    if (read == flen) {
-      client.print("--frame\r\n");
-      client.print("Content-Type: image/jpeg\r\n");
-      client.printf("Content-Length: %u\r\n\r\n", flen);
-      client.write(buf, flen);
-      client.print("\r\n");
-      delay(33);  // ~30fps playback
-    }
-    free(buf);
-  }
+  String html = "<!DOCTYPE html><html><head>";
+  html += "<meta charset=\"utf-8\"><title>Playback</title>";
+  html += "<style>body{background:#000;margin:0;display:flex;flex-direction:column;align-items:center}";
+  html += "img{max-width:95vw;max-height:90vh}";
+  html += "#info{color:#888;font-family:monospace;position:fixed;bottom:10px}";
+  html += "button{position:fixed;top:10px;right:10px;padding:8px 16px;background:#333;color:#fff;border:none;border-radius:6px;cursor:pointer}</style>";
+  html += "</head><body>";
+  html += "<img id='frame' src=''>";
+  html += "<div id='info'></div>";
+  html += "<button onclick='window.close()'>Fermer</button>";
+  html += "<script>";
+  html += "const f=document.getElementById('frame'),i=document.getElementById('info');";
+  html += "let buf=null,pos=0,playing=true;";
+  html += "function readU32(b,p){return(b[p]|b[p+1]<<8|b[p+2]<<16|b[p+3]<<24)>>>0;}";
+  html += "function showFrame(){if(!buf||!playing)return;";
+  html += "if(pos+4>buf.length){buf=null;fetch('/raw'+location.pathname).then(r=>r.arrayBuffer()).then(d=>{buf=new Uint8Array(d);pos=0;showFrame();}).catch(()=>{playing=false;});return;}";
+  html += "const len=readU32(buf,pos);if(!len||pos+4+len>buf.length){pos+=4;if(pos+4<buf.length)showFrame();else{playing=false;}return;}const jpg=buf.subarray(pos+4,pos+4+len);";
+  html += "f.src='data:image/jpeg;base64,'+btoa(String.fromCharCode.apply(null,jpg));";
+  html += "i.textContent='Frame byte '+pos+' ('+len+'B)';pos+=4+len;setTimeout(showFrame,250);}";
+  html += "showFrame();";
+  html += "</script></body></html>";
   f.close();
+  webServer.send(200, "text/html; charset=utf-8", html);
 }
 
-// Téléchargement brut du fichier .pcs
 void handleDownload() {
-  if (!webServer.hasArg("f")) { webServer.send(400, "text/plain", "Missing ?f="); return; }
-  String fname = webServer.arg("f");
-  if (fname.indexOf('/') >= 0 || fname.indexOf("..") >= 0) {
-    webServer.send(403, "text/plain", "Forbidden"); return;
-  }
-  String path = "/rec/" + fname;
-  File f = SD_MMC.open(path);
-  if (!f) { webServer.send(404, "text/plain", "Not found"); return; }
+  String path = "/" + webServer.uri().substring(4);
+  if (!SD_MMC.exists(path.c_str())) { webServer.send(404, "text/plain", "Not found"); return; }
+  File f = SD_MMC.open(path.c_str(), FILE_READ);
+  size_t fileSize = f.size();
 
-  webServer.sendHeader("Content-Disposition", "attachment; filename=\"" + fname + "\"");
-  webServer.streamFile(f, "application/octet-stream");
+  webServer.client().println("HTTP/1.1 200 OK");
+  webServer.client().println("Content-Type: application/octet-stream");
+  webServer.client().println("Content-Disposition: attachment; filename=" + path.substring(5));
+  webServer.client().println("Content-Length: " + String(fileSize));
+  webServer.client().println();
+
+  uint8_t buf[2048];
+  size_t sent = 0;
+  while (sent < fileSize) {
+    size_t chunk = f.read(buf, sizeof(buf));
+    if (chunk == 0) break;
+    webServer.client().write(buf, chunk);
+    sent += chunk;
+  }
   f.close();
 }
 
-void handleNotFound() {
-  webServer.send(404, "text/plain", "Not found");
+void handleRawRange() {
+  String path = "/" + webServer.uri().substring(5);
+  if (!SD_MMC.exists(path.c_str())) { webServer.send(404, "text/plain", "Not found"); return; }
+  File f = SD_MMC.open(path.c_str(), FILE_READ);
+  size_t fileSize = f.size();
+  size_t start = 0, end = fileSize - 1;
+
+  WiFiClient &client = webServer.client();
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: application/octet-stream");
+  client.println("Accept-Ranges: bytes");
+  client.println("Content-Length: " + String(fileSize));
+  client.println();
+
+  uint8_t buf[2048];
+  size_t sent = 0;
+  while (sent < fileSize) {
+    size_t chunk = f.read(buf, sizeof(buf));
+    if (chunk == 0) break;
+    client.write(buf, chunk);
+    sent += chunk;
+  }
+  f.close();
 }
 
 // ═══════════════════════════════════════════════
-// STREAM VERS SERVEUR PCS (tâche FreeRTOS — Core 0)
+// TASK 1 — Capture caméra (Core 1, prio 3)
+//
+// RÈGLE ABSOLUE : esp_camera_fb_return() doit être appelé
+// dans les 2 × période capteur après fb_get().
+// → Pas de vTaskDelay. Boucle serrée. Zéro malloc.
 // ═══════════════════════════════════════════════
-void taskStream(void *param) {
-  const uint32_t frameInterval = 1000 / cfg.fps_limit;
-  uint32_t lastSent = 0;
+void camTask(void *param) {
+  Serial.println("[CAM] started");
 
-  for (;;) {
-    if (!WiFi.isConnected()) { vTaskDelay(1000 / portTICK_PERIOD_MS); continue; }
-
-    uint32_t now = millis();
-    if (now - lastSent < frameInterval) {
-      vTaskDelay(5 / portTICK_PERIOD_MS);
-      continue;
-    }
-
+  while (true) {
     camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb) { vTaskDelay(10 / portTICK_PERIOD_MS); continue; }
+    if (!fb) continue;   // ← pas de delay : drain le plus vite possible
 
-    // ── COPIE IMMÉDIATE + LIBÉRATION DU BUFFER CAMÉRA ──────────────
-    // Le buffer DMA doit être libéré AVANT tout I/O (SD / HTTP)
-    // sinon cam_hal: FB-OVF → plus aucune frame capturée
-    size_t len = fb->len;
-    uint8_t *buf = (uint8_t*)malloc(len);
-    if (buf) memcpy(buf, fb->buf, len);
-    esp_camera_fb_return(fb);   // ← libéré immédiatement
-
-    if (!buf) {
-      Serial.println("[Stream] malloc fail, skip frame");
-      vTaskDelay(100 / portTICK_PERIOD_MS);
+    if (fb->len < 1000 || fb->len > FRAME_MAX) {
+      esp_camera_fb_return(fb);
       continue;
     }
 
-    Serial.printf("[Stream] frame %d bytes\n", len);
+    int w = sCapIdx;
+    size_t len = fb->len;
 
-    // Écriture SD (sur copie locale)
-    if (sdReady) writeFrameToSD(buf, len);
+    // ── Copie vers slot stream ────────────────────────────────────
+    memcpy(sBuf[w], fb->buf, len);
+    sLen[w] = len;
 
-    // Envoi HTTP — JPEG brut (plus simple, moins de RAM que multipart)
-    HTTPClient http;
-    String url = String(cfg.server_url) + "/stream_upload";
+    // ── Copie vers slot SD (non-bloquant, drop si pool vide) ─────
+    uint8_t *slot = nullptr;
+    if (xQueueReceive(qSdFree, &slot, 0) == pdTRUE && slot) {
+      memcpy(slot, fb->buf, len);
+      FrameItem fi = { slot, len };
+      if (xQueueSend(qSdReady, &fi, 0) != pdTRUE) {
+        xQueueSend(qSdFree, &slot, 0);   // rendre le slot si queue pleine
+      }
+    }
+
+    esp_camera_fb_return(fb);   // ← IMMÉDIATEMENT après les copies, avant tout le reste
+
+    // ── Publier le nouveau slot comme "latest" (mutex 1 ms max) ──
+    if (xSemaphoreTake(sMux, pdMS_TO_TICKS(1)) == pdTRUE) {
+      sLatestIdx = w;
+      xSemaphoreGive(sMux);
+    }
+    // Avancer toujours, même si mutex timeout (fb déjà rendu → pas d'OVF)
+    sCapIdx = (w + 1) % N_SBUF;
+  }
+}
+
+// ═══════════════════════════════════════════════
+// TASK 2 — Streaming HTTP POST (Core 0, prio 2)
+//
+// Copie la dernière frame SOUS mutex (~1 ms),
+// puis fait le POST hors mutex (1-4 s).
+// camTask n'est jamais bloqué par le POST.
+// ═══════════════════════════════════════════════
+void streamTask(void *param) {
+  Serial.println("[STREAM] started");
+
+  // Allouer le buffer HTTP une seule fois — jamais free/malloc pendant le stream
+  httpBuf = (uint8_t*)ps_malloc(FRAME_MAX);
+  if (!httpBuf) httpBuf = (uint8_t*)malloc(FRAME_MAX);
+  if (!httpBuf) {
+    Serial.println("[STREAM] FATAL: cannot alloc http buffer");
+    vTaskDelete(NULL);
+    return;
+  }
+
+  HTTPClient http;
+  http.setReuse(true);
+  String url = String(cfg.server_url) + "/stream_upload";
+
+  uint32_t lastSent  = 0;
+  uint32_t sentCount = 0;
+
+  while (true) {
+    if (!WiFi.isConnected()) { vTaskDelay(pdMS_TO_TICKS(1000)); continue; }
+
+    uint32_t interval = (cfg.fps_limit > 0) ? 1000u / cfg.fps_limit : 200u;
+    if (millis() - lastSent < interval) {
+      vTaskDelay(pdMS_TO_TICKS(5));
+      continue;
+    }
+
+    // ── Copier la dernière frame disponible SOUS mutex (~1 ms) ───
+    size_t httpLen = 0;
+    if (xSemaphoreTake(sMux, pdMS_TO_TICKS(20)) == pdTRUE) {
+      int r = sLatestIdx;
+      if (r >= 0 && sBuf[r] && sLen[r] > 0) {
+        memcpy(httpBuf, sBuf[r], sLen[r]);
+        httpLen = sLen[r];
+      }
+      xSemaphoreGive(sMux);
+    }
+
+    if (httpLen == 0) { vTaskDelay(pdMS_TO_TICKS(10)); continue; }
+
+    // ── POST hors mutex — peut durer 1-4 s, camTask libre ────────
     http.begin(url);
-    http.setTimeout(4000);
     http.addHeader("X-API-Key",    cfg.camera_id);
     http.addHeader("Content-Type", "image/jpeg");
-    int code = http.POST(buf, len);
-    if (code > 0) Serial.printf("[Stream] HTTP %d\n", code);
-    else          Serial.printf("[Stream] err %s\n", http.errorToString(code).c_str());
-    http.end();
+    http.setTimeout(4000);
+    int code = http.POST(httpBuf, httpLen);
 
-    free(buf);
     lastSent = millis();
-    vTaskDelay(2 / portTICK_PERIOD_MS);
+    sentCount++;
+
+    if (code == 200 || code == 204) {
+      if (sentCount % 30 == 0)
+        Serial.printf("[STREAM] %u frames sent, heap=%uKB\n",
+          sentCount, ESP.getFreeHeap() / 1024);
+    } else {
+      Serial.printf("[STREAM] HTTP %d (%d B)\n", code, httpLen);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════
+// TASK 3 — SD Recording (Core 0, prio 1)
+// Défile les slots pré-alloués, écrit sur SD, rend le slot.
+// ═══════════════════════════════════════════════
+void sdTask(void *param) {
+  Serial.println("[SD] started");
+
+  FrameItem item;
+  while (true) {
+    if (xQueueReceive(qSdReady, &item, pdMS_TO_TICKS(5000)) != pdTRUE) {
+      // timeout — flush périodique
+      if (sdReady && recFile && recFrameCount > 0 && millis() - lastSdFlush > 60000) {
+        recFile.flush();
+        lastSdFlush = millis();
+      }
+      continue;
+    }
+
+    if (sdReady) {
+      String hourKey = getHourKey();
+      if (hourKey != currentHourKey) {
+        if (recFile) { recFile.flush(); recFile.close(); }
+        recFile = SD_MMC.open(getFilePath(hourKey).c_str(), FILE_APPEND);
+        currentHourKey = hourKey;
+        recFrameCount  = 0;
+        lastSdFlush    = millis();
+        Serial.println("[SD] New file: " + hourKey);
+        purgeOldRecordings();
+      }
+      if (recFile) {
+        uint32_t flen = (uint32_t)item.len;
+        recFile.write((uint8_t*)&flen, 4);
+        recFile.write(item.data, item.len);
+        recFrameCount++;
+        if (millis() - lastSdFlush > 60000 || recFrameCount % 100 == 0) {
+          recFile.flush();
+          lastSdFlush = millis();
+        }
+      }
+    }
+
+    // Rendre le slot au pool (jamais free())
+    xQueueSend(qSdFree, &item.data, portMAX_DELAY);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// AP + Config WebServer
+// ═══════════════════════════════════════════════
+void startConfigMode() {
+  Serial.println("[WIFI] Starting AP...");
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("PCS-Setup", "12345678");
+  IPAddress IP = WiFi.softAPIP();
+  Serial.print("[WIFI] AP IP: ");
+  Serial.println(IP);
+
+  webServer.on("/", handleRoot);
+  webServer.on("/save", handleSave);
+  webServer.on("/recordings", handleRecordings);
+  webServer.on("/play/", handlePlay);
+  webServer.on("/dl/", handleDownload);
+  webServer.on("/raw", handleRawRange);
+  webServer.begin();
+  Serial.println("[WEB] Config server started");
+
+  configMode = true;
+  while (true) {
+    webServer.handleClient();
+    delay(10);
   }
 }
 
@@ -626,113 +761,115 @@ void taskStream(void *param) {
 // ═══════════════════════════════════════════════
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n=== PCS ESP32-CAM Firmware ===");
+  delay(500);
+  Serial.println();
+  Serial.println("╔══════════════════════════════════════╗");
+  Serial.println("║   ParkingCamSecurity — ESP32-CAM    ║");
+  Serial.println("╚══════════════════════════════════════╝");
 
-  // Bouton config
+  // Bouton config enfoncé → mode AP
   pinMode(CONFIG_BTN_PIN, INPUT_PULLUP);
+  if (digitalRead(CONFIG_BTN_PIN) == LOW) {
+    Serial.println("[BOOT] Config button pressed — AP mode");
+    startConfigMode();
+  }
+
   loadConfig();
 
-  // ── Double-reset detection ──────────────────────────────────────
-  // Appuyer RST 2 fois en moins de 3s → mode config AP
-  uint32_t nowMs = millis();
-  bool doubleReset = false;
-  if (rtcResetCount >= 1 && (nowMs - rtcResetMs) < 3000) {
-    doubleReset = true;
-    rtcResetCount = 0;
-  } else {
-    rtcResetCount = 1;
-    rtcResetMs    = nowMs;
+  if (strlen(cfg.wifi_ssid) == 0) {
+    Serial.println("[BOOT] No WiFi config — AP mode");
+    startConfigMode();
   }
-  // Après 3s si l'ESP tourne encore, on remet le compteur à 0
-  // (géré en fin de setup)
 
-  // Forcer mode config si : double-reset OU bouton GPIO13 OU pas de SSID
-  configMode = doubleReset || (digitalRead(CONFIG_BTN_PIN) == LOW) || (strlen(cfg.wifi_ssid) == 0);
-  if (doubleReset) Serial.println(">>> DOUBLE RESET détecté — mode config <<<");
+  // WiFi
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true); // Reset WiFi
+  delay(100);
+  WiFi.setAutoReconnect(true);
+  
+  Serial.print("[WIFI] Tentative de connexion au SSID: '");
+  Serial.print(cfg.wifi_ssid);
+  Serial.print("' avec pass: '");
+  Serial.print(cfg.wifi_pass);
+  Serial.println("'");
 
-  camMutex = xSemaphoreCreateMutex();
+  WiFi.begin(cfg.wifi_ssid, cfg.wifi_pass);
 
-  // Init caméra
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 60000) {
+    delay(500);
+    Serial.print(".");
+    // Affiche le code d'état : 3=connecté, 6=déconnecté, 1=SSID non trouvé, 4=échec connexion
+    Serial.print(WiFi.status()); 
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\n[WIFI] Failed — starting AP");
+    startConfigMode();
+  }
+
+  Serial.println("\n[WIFI] Connected: " + WiFi.localIP().toString());
+
+  delay(500);
+
+  // ── Pré-allocation des buffers (UNE SEULE FOIS, zéro fragmentation) ──
+  sMux = xSemaphoreCreateMutex();
+  for (int i = 0; i < N_SBUF; i++) {
+    sBuf[i] = (uint8_t*)ps_malloc(FRAME_MAX);
+    if (!sBuf[i]) sBuf[i] = (uint8_t*)malloc(FRAME_MAX);
+    if (!sBuf[i]) { Serial.printf("[FATAL] sBuf[%d] alloc fail\n", i); while(true) delay(1000); }
+  }
+  qSdFree  = xQueueCreate(N_SDBUF, sizeof(uint8_t*));
+  qSdReady = xQueueCreate(N_SDBUF, sizeof(FrameItem));
+  for (int i = 0; i < N_SDBUF; i++) {
+    sdPool[i] = (uint8_t*)ps_malloc(FRAME_MAX);
+    if (!sdPool[i]) sdPool[i] = (uint8_t*)malloc(FRAME_MAX);
+    if (sdPool[i]) xQueueSend(qSdFree, &sdPool[i], 0);
+  }
+  Serial.printf("[INIT] Buffers OK — heap=%uKB PSRAM=%uKB\n",
+    ESP.getFreeHeap()/1024, ESP.getPsramSize()/1024);
+
+  // ── Caméra ──────────────────────────────────────────────────────
   if (!initCamera()) {
-    Serial.println("FATAL: camera init failed");
-    delay(3000);
-    ESP.restart();
+    Serial.println("[FATAL] Camera init failed");
+    while (true) delay(1000);
   }
 
-  // Init SD
+  // ── SD ───────────────────────────────────────────────────────────
   sdReady = initSD();
-  if (!sdReady) Serial.println("WARNING: SD not available, recording disabled");
 
-  if (configMode) {
-    // ── MODE AP CONFIGURATION ──
-    Serial.println(">>> MODE CONFIG AP <<<");
-    WiFi.softAP("PCS-Config");
-    Serial.print("AP IP: "); Serial.println(WiFi.softAPIP());
+  // ── NTP ──────────────────────────────────────────────────────────
+  syncNTP();
 
-    webServer.on("/",         HTTP_GET,  handleRoot);
-    webServer.on("/save",     HTTP_POST, handleSave);
-    webServer.on("/recordings", HTTP_GET, handleRecordings);
-    webServer.onNotFound(handleNotFound);
-    webServer.begin();
-    Serial.println("Config server started — http://192.168.4.1");
+  // ── 3 tâches FreeRTOS ────────────────────────────────────────────
+  // camTask    Core 1 prio 3 : capture serrée, jamais bloquée
+  // streamTask Core 0 prio 2 : HTTP POST
+  // sdTask     Core 0 prio 1 : écriture SD
+  xTaskCreatePinnedToCore(camTask,    "cam",    4096, NULL, 3, NULL, 1);
+  xTaskCreatePinnedToCore(streamTask, "stream", 8192, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(sdTask,     "sd",     8192, NULL, 1, NULL, 0);
 
-  } else {
-    // ── MODE NORMAL ──
-    Serial.printf("Connecting to WiFi: %s\n", cfg.wifi_ssid);
-    WiFi.mode(WIFI_STA);
-    // Connexion même aux SSID cachés (hidden network)
-    WiFi.begin(cfg.wifi_ssid, cfg.wifi_pass, 0, NULL, true);
-
-    int tries = 0;
-    while (WiFi.status() != WL_CONNECTED && tries++ < 30) {
-      delay(500); Serial.print(".");
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {
-      Serial.printf("\nWiFi OK — IP: %s\n", WiFi.localIP().toString().c_str());
-      syncNTP();
-    } else {
-      Serial.println("\nWiFi FAIL — passage en mode config");
-      delay(1000);
-      configMode = true;
-      WiFi.softAP("PCS-Config");
-    }
-
-    // Serveur web (config + enregistrements)
-    webServer.on("/",           HTTP_GET,  handleRoot);
-    webServer.on("/save",       HTTP_POST, handleSave);
-    webServer.on("/recordings", HTTP_GET,  handleRecordings);
-    webServer.on("/stream",     HTTP_GET,  handleStream);
-    webServer.on("/dl",         HTTP_GET,  handleDownload);
-    webServer.onNotFound(handleNotFound);
-    webServer.begin();
-    Serial.println("Web server started on port 80");
-
-    // Tâche stream sur Core 0
-    xTaskCreatePinnedToCore(taskStream, "StreamTask", 8192, NULL, 1, NULL, 0);
-  }
-
-  // Si on arrive ici sans double-reset, on remet le compteur à 0 après 3s
-  // pour ne pas déclencher le mode config au prochain reboot normal
-  delay(3000);
-  rtcResetCount = 0;
+  Serial.println("[BOOT] All tasks started");
+  Serial.printf("[BOOT] heap=%uKB PSRAM=%uKB\n",
+    ESP.getFreeHeap()/1024, ESP.getPsramSize()/1024);
 }
 
 // ═══════════════════════════════════════════════
-// LOOP
+// LOOP — webserver + monitoring
 // ═══════════════════════════════════════════════
 void loop() {
-  webServer.handleClient();
+  // Si en mode config, le webserver tourne déjà dans startConfigMode()
+  if (!configMode) {
+    delay(100);
 
-  // Reconnexion WiFi auto si déconnecté
-  static uint32_t lastCheck = 0;
-  if (!configMode && millis() - lastCheck > 10000) {
-    lastCheck = millis();
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("WiFi lost — reconnecting...");
-      WiFi.reconnect();
+    // Monitoring mémoire toutes les 30s
+    static unsigned long lastMemReport = 0;
+    if (millis() - lastMemReport > 30000) {
+      lastMemReport = millis();
+      UBaseType_t sdFree  = uxQueueMessagesWaiting(qSdFree);
+      UBaseType_t sdReady = uxQueueMessagesWaiting(qSdReady);
+      Serial.printf("[MON] heap=%uKB sd_pool=%d free %d ready latest=%d\n",
+        ESP.getFreeHeap()/1024, (int)sdFree, (int)sdReady, (int)sLatestIdx);
     }
   }
-
-  delay(1);
 }
