@@ -433,6 +433,105 @@ Add Camera / Ajouter un appareil
                 </div>
             </div>
             
+            <!-- Ollama Vision IA -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-2">
+                <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
+                    <h2 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                        </svg>
+                        Récaps Vision IA (Ollama)
+                    </h2>
+                    <p class="text-sm text-gray-500 mt-1">Analyse automatique de vos caméras par un modèle de vision Ollama — local ou cloud.</p>
+                </div>
+                <div class="p-6 space-y-4">
+                    <!-- URL + clé API -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">URL Ollama</label>
+                            <input type="text" id="ollama-url"
+                                value="{{ ollama_cfg.base_url if ollama_cfg else 'https://ollama.com' }}"
+                                placeholder="https://ollama.com  ou  http://localhost:11434"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-purple-300 focus:border-purple-400">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Clé API (Bearer)</label>
+                            <input type="password" id="ollama-key"
+                                value="{{ ollama_cfg.api_key if ollama_cfg else '' }}"
+                                placeholder="ollama_... (vide si local)"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-purple-300 focus:border-purple-400">
+                        </div>
+                    </div>
+
+                    <!-- Modèle -->
+                    <div class="flex gap-2 items-end">
+                        <div class="flex-1">
+                            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Modèle vision</label>
+                            <select id="ollama-model"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-purple-300 focus:border-purple-400">
+                                {% if ollama_cfg and ollama_cfg.model_name %}
+                                <option value="{{ ollama_cfg.model_name }}" selected>{{ ollama_cfg.model_name }}</option>
+                                {% else %}
+                                <option value="">— cliquez "Charger les modèles" —</option>
+                                {% endif %}
+                            </select>
+                        </div>
+                        <button onclick="loadOllamaModels()"
+                            class="px-4 py-2 rounded-lg text-sm font-medium bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 transition whitespace-nowrap">
+                            Charger les modèles
+                        </button>
+                    </div>
+
+                    <!-- Intervalle + toggles -->
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Intervalle des récaps</label>
+                            <select id="ollama-interval"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                {% set ival = ollama_cfg.recap_interval if ollama_cfg else 10 %}
+                                <option value="3" {% if ival==3 %}selected{% endif %}>Toutes les 3 minutes</option>
+                                <option value="10" {% if ival==10 %}selected{% endif %}>Toutes les 10 minutes</option>
+                                <option value="30" {% if ival==30 %}selected{% endif %}>Toutes les 30 minutes</option>
+                                <option value="60" {% if ival==60 %}selected{% endif %}>Toutes les heures</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-3 pt-5">
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="ollama-enabled" class="sr-only peer"
+                                    {% if ollama_cfg and ollama_cfg.is_enabled %}checked{% endif %}>
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                                <span class="ml-2 text-sm font-medium text-gray-700">Activer les récaps</span>
+                            </label>
+                        </div>
+                        <div class="flex items-center gap-3 pt-5">
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="ollama-notif" class="sr-only peer"
+                                    {% if not ollama_cfg or ollama_cfg.send_notification %}checked{% endif %}>
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                                <span class="ml-2 text-sm font-medium text-gray-700">Envoyer via Signal/Telegram</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Bouton save -->
+                    <div class="flex justify-end pt-1">
+                        <button onclick="saveOllamaConfig()"
+                            class="px-5 py-2 rounded-lg text-sm font-semibold bg-purple-600 text-white hover:bg-purple-700 transition">
+                            Sauvegarder
+                        </button>
+                    </div>
+
+                    <p class="text-xs text-gray-400">
+                        Les modèles vision recommandés : <code class="bg-gray-100 px-1 rounded">llava</code>,
+                        <code class="bg-gray-100 px-1 rounded">llava-phi3</code>,
+                        <code class="bg-gray-100 px-1 rounded">moondream</code>,
+                        <code class="bg-gray-100 px-1 rounded">minicpm-v</code>.<br>
+                        Ollama cloud : créez une clé sur <a href="https://ollama.com/settings/keys" target="_blank" class="text-purple-600 hover:underline">ollama.com/settings/keys</a>.
+                    </p>
+                </div>
+            </div>
+
             <!-- Compatibilité Matériel -->
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden lg:col-span-2">
                 <div class="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
@@ -1328,6 +1427,55 @@ Add Camera / Ajouter un appareil
                 fieldsSignal.classList.add('hidden');
             }
         }
+
+        // ── Ollama Vision ─────────────────────────────────────────────
+        function loadOllamaModels() {
+            const url = document.getElementById('ollama-url').value.trim();
+            const key = document.getElementById('ollama-key').value.trim();
+            const sel = document.getElementById('ollama-model');
+            sel.innerHTML = '<option>Chargement...</option>';
+            fetch('/api/ollama/models?url=' + encodeURIComponent(url) + '&key=' + encodeURIComponent(key))
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) { sel.innerHTML = '<option>Erreur: ' + data.error + '</option>'; return; }
+                    const saved = sel.dataset.saved || '';
+                    sel.innerHTML = '';
+                    (data.models || []).forEach(m => {
+                        const opt = document.createElement('option');
+                        opt.value = m.name;
+                        opt.textContent = m.name + (m.vision ? ' 👁️' : '');
+                        if (m.name === saved) opt.selected = true;
+                        sel.appendChild(opt);
+                    });
+                    if (!sel.value && data.models.length) sel.value = data.models[0].name;
+                })
+                .catch(e => { sel.innerHTML = '<option>Erreur réseau</option>'; console.error(e); });
+        }
+
+        function saveOllamaConfig() {
+            const payload = {
+                base_url: document.getElementById('ollama-url').value.trim(),
+                api_key: document.getElementById('ollama-key').value.trim(),
+                model_name: document.getElementById('ollama-model').value,
+                recap_interval: parseInt(document.getElementById('ollama-interval').value),
+                is_enabled: document.getElementById('ollama-enabled').checked,
+                send_notification: document.getElementById('ollama-notif').checked,
+            };
+            fetch('/api/ollama/config', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            })
+            .then(r => r.json())
+            .then(d => { if (d.ok) alert('Configuration Ollama sauvegardée ✓'); else alert('Erreur: ' + (d.error || 'unknown')); })
+            .catch(e => alert('Erreur: ' + e));
+        }
+
+        // Mémoriser le modèle sauvegardé pour la restaurer après loadOllamaModels()
+        (function() {
+            const sel = document.getElementById('ollama-model');
+            if (sel) sel.dataset.saved = sel.value;
+        })();
 
         // Fallback polling 5s — uniquement si SocketIO n'a pas livré de frame
         setInterval(() => {

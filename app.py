@@ -52,6 +52,7 @@ from models import (
     CameraSummary,
     AIConfig,
     RoboflowModel,
+    OllamaConfig,
 )
 from sqlalchemy import text
 import logging
@@ -75,6 +76,7 @@ PUBLIC_CAMERA_FRAMES = {}  # camera_id -> {frame, last_seen, name}
 RECORDING_LISTS = {}       # camera_id -> {files, sd_total, sd_used, updated_at}
 CAMERA_COMMANDS = {}       # camera_id -> deque of pending commands
 PENDING_LAST_SEEN = {}     # camera_id -> datetime (flush async every 60s)
+_ollama_last_recap = {}    # user_id -> datetime (dernière exécution recap Ollama)
 
 # ── Enregistrements serveur (/app/data/rec) ───────────────────────────
 import struct
@@ -561,6 +563,73 @@ def create_tables():
                 logger.warning(f"[RecClean] error: {e}")
 
     eventlet.spawn(_rec_cleanup)
+
+    # ── Greenlet : récaps vision Ollama ───────────────────────────────
+    def _ollama_recap_worker():
+        while True:
+            eventlet.sleep(60)
+            try:
+                with app.app_context():
+                    configs = OllamaConfig.query.filter_by(is_enabled=True).all()
+                    now = datetime.utcnow()
+                    for cfg in configs:
+                        last = _ollama_last_recap.get(cfg.user_id)
+                        if last and (now - last).total_seconds() < cfg.recap_interval * 60:
+                            continue
+                        cameras = Camera.query.filter_by(user_id=cfg.user_id).all()
+                        recaps = []
+                        for cam in cameras:
+                            frame = LATEST_FRAMES.get(cam.id)
+                            if not frame:
+                                continue
+                            status = CAMERA_STATUS.get(cam.id, {})
+                            last_frame = status.get("last_frame")
+                            if not last_frame or (now - last_frame).total_seconds() > 300:
+                                continue  # caméra inactive
+                            try:
+                                img_b64 = base64.b64encode(frame).decode()
+                                headers = {"Content-Type": "application/json"}
+                                if cfg.api_key:
+                                    headers["Authorization"] = f"Bearer {cfg.api_key}"
+                                payload = {
+                                    "model": cfg.model_name,
+                                    "messages": [{
+                                        "role": "user",
+                                        "content": (
+                                            "Tu es un système de surveillance de parking. "
+                                            "Décris brièvement ce que tu vois sur cette image de caméra: "
+                                            "véhicules présents, personnes, activité. 2-3 phrases max."
+                                        ),
+                                        "images": [img_b64],
+                                    }],
+                                    "stream": False,
+                                }
+                                resp = requests.post(
+                                    f"{cfg.base_url.rstrip('/')}/api/chat",
+                                    json=payload,
+                                    headers=headers,
+                                    timeout=30,
+                                )
+                                if resp.status_code == 200:
+                                    text_resp = resp.json().get("message", {}).get("content", "")
+                                    if text_resp:
+                                        recaps.append(f"📷 {cam.name}: {text_resp.strip()}")
+                            except Exception as e:
+                                logger.warning(f"[OllamaRecap] cam={cam.id}: {e}")
+
+                        if recaps:
+                            _ollama_last_recap[cfg.user_id] = now
+                            if cfg.send_notification:
+                                msg = (
+                                    f"🤖 Récap IA — {cfg.model_name} "
+                                    f"(toutes les {cfg.recap_interval} min)\n\n"
+                                    + "\n\n".join(recaps)
+                                )
+                                eventlet.spawn(send_alert, cfg.user_id, msg)
+            except Exception as e:
+                logger.warning(f"[OllamaRecap] worker error: {e}")
+
+    eventlet.spawn(_ollama_recap_worker)
 
 
 def get_max_roboflow_models(user):
@@ -1089,6 +1158,69 @@ def srv_recordings_delete_all_cameras(user_id=None):
                     os.remove(path)
                     deleted += 1
     return jsonify({"deleted": deleted, "freed_mb": round(freed / 1024 / 1024, 1)})
+
+
+@app.route("/api/ollama/config", methods=["GET", "POST"])
+@require_auth
+def api_ollama_config():
+    user_id = session["user_id"]
+    if request.method == "GET":
+        cfg = OllamaConfig.query.filter_by(user_id=user_id).first()
+        if not cfg:
+            return jsonify({
+                "base_url": "https://ollama.com", "api_key": "",
+                "model_name": "", "recap_interval": 10,
+                "is_enabled": False, "send_notification": True,
+            })
+        return jsonify({
+            "base_url": cfg.base_url, "api_key": cfg.api_key,
+            "model_name": cfg.model_name, "recap_interval": cfg.recap_interval,
+            "is_enabled": cfg.is_enabled, "send_notification": cfg.send_notification,
+        })
+    data = request.get_json(force=True) or {}
+    cfg = OllamaConfig.query.filter_by(user_id=user_id).first()
+    if not cfg:
+        cfg = OllamaConfig(user_id=user_id)
+        db.session.add(cfg)
+    cfg.base_url = data.get("base_url", "https://ollama.com").rstrip("/")
+    cfg.api_key = data.get("api_key", "")
+    cfg.model_name = data.get("model_name", "")
+    cfg.recap_interval = int(data.get("recap_interval", 10))
+    cfg.is_enabled = bool(data.get("is_enabled", False))
+    cfg.send_notification = bool(data.get("send_notification", True))
+    db.session.commit()
+    if not cfg.is_enabled:
+        _ollama_last_recap.pop(user_id, None)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/ollama/models")
+@require_auth
+def api_ollama_models():
+    """Récupère la liste des modèles depuis l'instance Ollama de l'utilisateur."""
+    base_url = request.args.get("url", "https://ollama.com").rstrip("/")
+    api_key = request.args.get("key", "")
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    # Modèles connus pour supporter la vision
+    VISION_KEYWORDS = {
+        "llava", "bakllava", "moondream", "minicpm", "llava-phi",
+        "llava-llama", "gemma3", "mistral-small3", "cogvlm", "qwen2-vl",
+    }
+    try:
+        resp = requests.get(f"{base_url}/api/tags", headers=headers, timeout=10)
+        resp.raise_for_status()
+        raw_models = resp.json().get("models", [])
+        models = []
+        for m in raw_models:
+            name = m.get("name", "")
+            vision = any(kw in name.lower() for kw in VISION_KEYWORDS)
+            models.append({"name": name, "vision": vision})
+        models.sort(key=lambda x: (not x["vision"], x["name"]))
+        return jsonify({"models": models})
+    except Exception as e:
+        return jsonify({"error": str(e), "models": []}), 200
 
 
 @app.route("/api/camera/status/<int:camera_id>")
@@ -1642,6 +1774,7 @@ def dashboard():
 
     roboflow_models = RoboflowModel.query.filter_by(user_id=user_id).all()
     max_rf_models = get_max_roboflow_models(user)
+    ollama_cfg = OllamaConfig.query.filter_by(user_id=user_id).first()
 
     # Tous les passages récents (50 derniers)
     recent_detections = (
@@ -1672,6 +1805,7 @@ def dashboard():
         max_targets=max_targets,
         list_mode=list_mode,
         ocr_reinforcement=ocr_reinforcement,
+        ollama_cfg=ollama_cfg,
     )
 
 

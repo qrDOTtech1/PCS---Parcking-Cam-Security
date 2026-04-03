@@ -208,6 +208,22 @@ class RoboflowModel(db.Model):
         self.alert_classes_json = json.dumps(class_list)
 
 
+class OllamaConfig(db.Model):
+    """
+    Configuration Ollama par utilisateur.
+    Supporte local (http://host:11434) et cloud (https://ollama.com).
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True)
+    base_url = db.Column(db.String(255), default="https://ollama.com")
+    api_key = db.Column(db.String(255), default="")
+    model_name = db.Column(db.String(100), default="")
+    recap_interval = db.Column(db.Integer, default=10)  # minutes : 3/10/30/60
+    is_enabled = db.Column(db.Boolean, default=False)
+    send_notification = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class AIConfig(db.Model):
     """
     Configuration IA par utilisateur — pour le futur produit PCS-AI.
