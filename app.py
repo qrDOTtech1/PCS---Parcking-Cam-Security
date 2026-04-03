@@ -12,6 +12,8 @@ import base64
 import urllib.parse
 import requests
 import time
+import shutil
+import subprocess
 from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -978,7 +980,7 @@ def srv_recording_stream(camera_id, filename):
 @app.route("/srv_recording/dl/<int:camera_id>/<path:filename>")
 @require_auth
 def srv_recording_dl(camera_id, filename):
-    """Téléchargement brut d'un fichier .pcs."""
+    """Téléchargement converti en MP4 via ffmpeg (fallback .pcs brut)."""
     camera = Camera.query.filter_by(id=camera_id, user_id=session["user_id"]).first()
     if not camera:
         return "Unauthorized", 401
@@ -986,6 +988,60 @@ def srv_recording_dl(camera_id, filename):
     filepath = os.path.join(REC_DIR, str(camera_id), safe)
     if not os.path.exists(filepath):
         return "Not found", 404
+
+    if shutil.which("ffmpeg"):
+        basename = safe.replace(".pcs", ".mp4")
+
+        def generate_mp4():
+            proc = subprocess.Popen(
+                [
+                    "ffmpeg", "-y",
+                    "-f", "image2pipe", "-vcodec", "mjpeg", "-r", "10", "-i", "pipe:0",
+                    "-vcodec", "libx264", "-pix_fmt", "yuv420p", "-r", "10",
+                    "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+                    "-f", "mp4", "pipe:1",
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+
+            def feed_stdin():
+                try:
+                    with open(filepath, "rb") as f:
+                        while True:
+                            hdr = f.read(4)
+                            if len(hdr) < 4:
+                                break
+                            sz = struct.unpack("<I", hdr)[0]
+                            frame = f.read(sz)
+                            if len(frame) < sz:
+                                break
+                            proc.stdin.write(frame)
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        proc.stdin.close()
+                    except Exception:
+                        pass
+
+            eventlet.spawn(feed_stdin)
+
+            while True:
+                chunk = proc.stdout.read(65536)
+                if not chunk:
+                    break
+                yield chunk
+            proc.wait()
+
+        return Response(
+            generate_mp4(),
+            mimetype="video/mp4",
+            headers={"Content-Disposition": f'attachment; filename="{basename}"'},
+        )
+
+    # Fallback : .pcs brut si ffmpeg absent
     return send_file(filepath, as_attachment=True, download_name=safe)
 
 
