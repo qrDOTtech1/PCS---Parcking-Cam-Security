@@ -132,7 +132,7 @@ def _udp_dns_resolve(hostname, dns_server="8.8.8.8"):
         off += rdlen
     raise RuntimeError(f"DNS: aucun enregistrement A pour {hostname}")
 
-_OLLAMA_BYPASS_HOSTS = {"ollama.com"}
+_OLLAMA_BYPASS_HOSTS = {"ollama.com", "api.ollama.com"}
 _dns_cache = {}
 
 _orig_getaddrinfo = socket.getaddrinfo
@@ -678,7 +678,7 @@ def create_tables():
                                     "stream": False,
                                 }
                                 resp = requests.post(
-                                    "https://ollama.com/api/chat",
+                                    "https://api.ollama.com/api/chat",
                                     json=payload,
                                     headers=headers,
                                     timeout=30,
@@ -1249,7 +1249,7 @@ def api_ollama_test():
         "stream": False,
     }
     try:
-        resp = requests.post("https://ollama.com/api/chat", json=payload, headers=headers, timeout=20)
+        resp = requests.post("https://api.ollama.com/api/chat", json=payload, headers=headers, timeout=20)
         resp.raise_for_status()
         reply = resp.json().get("message", {}).get("content", "")
         return jsonify({"ok": True, "reply": reply})
