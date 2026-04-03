@@ -649,56 +649,140 @@ def create_tables():
                         last = _ollama_last_recap.get(cfg.user_id)
                         if last and (now - last).total_seconds() < cfg.recap_interval * 60:
                             continue
-                        cameras = Camera.query.filter_by(user_id=cfg.user_id).all()
-                        recaps = []
-                        for cam in cameras:
-                            frame = LATEST_FRAMES.get(cam.id)
-                            if not frame:
-                                continue
-                            status = CAMERA_STATUS.get(cam.id, {})
-                            last_frame = status.get("last_frame")
-                            if not last_frame or (now - last_frame).total_seconds() > 300:
-                                continue  # caméra inactive
-                            try:
-                                img_b64 = base64.b64encode(frame).decode()
-                                headers = {"Content-Type": "application/json"}
-                                if cfg.api_key:
-                                    headers["Authorization"] = f"Bearer {cfg.api_key}"
-                                payload = {
-                                    "model": cfg.model_name,
-                                    "messages": [{
-                                        "role": "user",
-                                        "content": (
-                                            "Tu es un système de surveillance de parking. "
-                                            "Décris brièvement ce que tu vois sur cette image de caméra: "
-                                            "véhicules présents, personnes, activité. 2-3 phrases max."
-                                        ),
-                                        "images": [img_b64],
-                                    }],
-                                    "stream": False,
-                                }
-                                resp = requests.post(
-                                    "https://ollama.com/api/chat",
-                                    json=payload,
-                                    headers=headers,
-                                    timeout=30,
-                                )
-                                if resp.status_code == 200:
-                                    text_resp = resp.json().get("message", {}).get("content", "")
-                                    if text_resp:
-                                        recaps.append(f"📷 {cam.name}: {text_resp.strip()}")
-                            except Exception as e:
-                                logger.warning(f"[OllamaRecap] cam={cam.id}: {e}")
 
-                        if recaps:
-                            _ollama_last_recap[cfg.user_id] = now
-                            if cfg.send_notification:
-                                msg = (
-                                    f"🤖 Récap IA — {cfg.model_name} "
-                                    f"(toutes les {cfg.recap_interval} min)\n\n"
-                                    + "\n\n".join(recaps)
-                                )
-                                eventlet.spawn(send_alert, cfg.user_id, msg)
+                        interval_start = last or (now - timedelta(minutes=cfg.recap_interval))
+                        cameras = Camera.query.filter_by(user_id=cfg.user_id).all()
+                        if not cameras:
+                            continue
+
+                        ollama_headers = {"Content-Type": "application/json"}
+                        if cfg.api_key:
+                            ollama_headers["Authorization"] = f"Bearer {cfg.api_key}"
+
+                        cam_sections = []
+                        global_vehicles = 0
+                        global_threats  = 0
+                        global_plates   = set()
+                        active_cams     = 0
+                        offline_cams    = 0
+
+                        for cam in cameras:
+                            status     = CAMERA_STATUS.get(cam.id, {})
+                            last_frame_ts = status.get("last_frame")
+                            is_online  = bool(last_frame_ts and (now - last_frame_ts).total_seconds() < 300)
+                            if is_online:
+                                active_cams += 1
+                            else:
+                                offline_cams += 1
+
+                            # ── Stats sur l'intervalle ──────────────────
+                            dets = PlateDetection.query.filter(
+                                PlateDetection.camera_id == cam.id,
+                                PlateDetection.detected_at >= interval_start,
+                                PlateDetection.detected_at <= now,
+                            ).all()
+                            n_dets    = len(dets)
+                            n_threats = sum(1 for d in dets if d.is_threat)
+                            plates    = list({d.plate_normalized for d in dets if d.plate_normalized})
+                            type_counts  = {}
+                            color_counts = {}
+                            for d in dets:
+                                t = d.vehicle_type  or "inconnu"
+                                c = d.vehicle_color or "inconnue"
+                                type_counts[t]  = type_counts.get(t, 0)  + 1
+                                color_counts[c] = color_counts.get(c, 0) + 1
+
+                            global_vehicles += n_dets
+                            global_threats  += n_threats
+                            global_plates.update(plates)
+
+                            # ── Vision IA ───────────────────────────────
+                            vision_text = ""
+                            frame = LATEST_FRAMES.get(cam.id)
+                            if frame and is_online and cfg.model_name:
+                                try:
+                                    img_b64 = base64.b64encode(frame).decode()
+                                    vision_prompt = (
+                                        "Tu es un système de surveillance de parking professionnel. "
+                                        "Analyse cette image et décris en 3-4 phrases: "
+                                        "1) les véhicules visibles (nombre, type, couleur, position), "
+                                        "2) les personnes si présentes, "
+                                        "3) toute activité inhabituelle ou suspecte, "
+                                        "4) l'état général de la zone. Sois précis et factuel."
+                                    )
+                                    resp = requests.post(
+                                        "https://ollama.com/api/chat",
+                                        json={
+                                            "model": cfg.model_name,
+                                            "messages": [{"role": "user", "content": vision_prompt, "images": [img_b64]}],
+                                            "stream": False,
+                                        },
+                                        headers=ollama_headers,
+                                        timeout=45,
+                                    )
+                                    if resp.status_code == 200:
+                                        vision_text = resp.json().get("message", {}).get("content", "").strip()
+                                except Exception as e:
+                                    logger.warning(f"[OllamaRecap] vision cam={cam.id}: {e}")
+
+                            # ── Construction section caméra ─────────────
+                            dot  = "🟢" if is_online else "🔴"
+                            stat = "EN LIGNE" if is_online else "HORS LIGNE"
+                            sec  = f"{dot} *{cam.name}* [{stat}]"
+                            if vision_text:
+                                sec += f"\n👁️ {vision_text}"
+                            sec += f"\n📊 Dernières {cfg.recap_interval} min :"
+                            sec += f"\n   🚗 Passages : {n_dets}"
+                            if type_counts:
+                                TYPE_EMOJI = {"car":"🚗","truck":"🚛","bus":"🚌","motorcycle":"🏍️","unknown":"🚙","inconnu":"🚙"}
+                                parts = [f"{TYPE_EMOJI.get(k,'🚗')} {v} {k}" for k,v in sorted(type_counts.items(),key=lambda x:-x[1])]
+                                sec += f"\n   Types : {', '.join(parts)}"
+                            if color_counts:
+                                top_colors = sorted(color_counts.items(), key=lambda x: -x[1])[:3]
+                                sec += f"\n   Couleurs : {', '.join(f'{v}× {c}' for c,v in top_colors)}"
+                            if plates:
+                                shown = ", ".join(plates[:6])
+                                if len(plates) > 6:
+                                    shown += f" (+{len(plates)-6})"
+                                sec += f"\n   🔍 Plaques : {shown}"
+                            if n_threats:
+                                threat_plates = [d.plate_normalized for d in dets if d.is_threat]
+                                sec += f"\n   ⚠️ MENACES : {n_threats} — {', '.join(threat_plates)}"
+                            else:
+                                sec += "\n   ✅ Aucune menace"
+                            cam_sections.append(sec)
+
+                        if not cam_sections:
+                            continue
+
+                        # ── Message global ──────────────────────────────
+                        start_str = interval_start.strftime("%H:%M")
+                        now_str   = now.strftime("%H:%M")
+                        threat_line = (
+                            f"⚠️ {global_threats} MENACE(S) !" if global_threats
+                            else "✅ Aucune menace"
+                        )
+                        cam_status = f"🟢 {active_cams} active(s)"
+                        if offline_cams:
+                            cam_status += f"  🔴 {offline_cams} hors ligne"
+
+                        msg = (
+                            f"🎯 *RÉCAP PCS* — {start_str} → {now_str}\n"
+                            f"{'━'*26}\n\n"
+                            + "\n\n".join(cam_sections)
+                            + f"\n\n{'━'*26}\n"
+                            f"🏁 *Résumé global*\n"
+                            f"   🚗 Passages totaux : {global_vehicles}\n"
+                            f"   🔍 Plaques uniques : {len(global_plates)}\n"
+                            f"   {threat_line}\n"
+                            f"   📷 Caméras : {cam_status}\n"
+                            f"   🤖 Modèle : {cfg.model_name}"
+                        )
+
+                        _ollama_last_recap[cfg.user_id] = now
+                        if cfg.send_notification:
+                            eventlet.spawn(send_alert, cfg.user_id, msg)
+                        logger.info(f"[OllamaRecap] user={cfg.user_id} recap sent ({len(cameras)} cams)")
             except Exception as e:
                 logger.warning(f"[OllamaRecap] worker error: {e}")
 
