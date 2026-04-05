@@ -505,10 +505,14 @@ Add Camera / Ajouter un appareil
 
                     <!-- Actions -->
                     <div class="flex items-center justify-between pt-1 gap-3 flex-wrap">
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 flex-wrap">
                             <button onclick="testOllama()"
                                 class="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 transition">
-                                Tester la connexion serveur
+                                Tester connexion
+                            </button>
+                            <button onclick="forceRecap()"
+                                class="px-4 py-2 rounded-lg text-sm font-medium bg-orange-50 text-orange-700 border border-orange-300 hover:bg-orange-100 transition">
+                                ⚡ Forcer récap maintenant
                             </button>
                             <span id="ollama-test-result" class="text-sm font-medium hidden"></span>
                         </div>
@@ -1451,6 +1455,20 @@ Add Camera / Ajouter un appareil
                 res.className = 'text-sm font-medium text-red-600';
                 res.textContent = '✗ ' + e;
             });
+        }
+
+        function forceRecap() {
+            const res = document.getElementById('ollama-test-result');
+            res.className = 'text-sm font-medium text-orange-600';
+            res.textContent = '⏳ Récap forcé — arrivée dans < 60s...';
+            res.classList.remove('hidden');
+            fetch('/api/ollama/force_recap', {method: 'POST'})
+                .then(r => r.json())
+                .then(d => {
+                    res.textContent = d.ok ? '✓ ' + d.msg : '✗ ' + d.error;
+                    res.className = 'text-sm font-medium ' + (d.ok ? 'text-orange-600' : 'text-red-600');
+                })
+                .catch(e => { res.textContent = '✗ ' + e; res.className = 'text-sm font-medium text-red-600'; });
         }
 
         function saveOllamaConfig() {

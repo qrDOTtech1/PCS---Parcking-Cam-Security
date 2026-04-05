@@ -359,9 +359,15 @@ def create_tables():
         try:
             conn.execute(
                 text(
-                    "ALTER TABLE camera ADD COLUMN flash_detect_enabled INTEGER DEFAULT 1"
+                    "ALTER TABLE camera ADD COLUMN flash_detect_enabled INTEGER DEFAULT 0"
                 )
             )
+        except:
+            pass
+        # Migration: désactiver gyrophare sur toutes les caméras existantes (opt-in)
+        try:
+            conn.execute(text("UPDATE camera SET flash_detect_enabled = 0"))
+            conn.commit()
         except:
             pass
         try:
@@ -641,9 +647,11 @@ def create_tables():
     def _ollama_recap_worker():
         while True:
             eventlet.sleep(60)
+            logger.info("[OllamaRecap] tick — vérification des configs actives")
             try:
                 with app.app_context():
                     configs = OllamaConfig.query.filter_by(is_enabled=True).all()
+                    logger.info(f"[OllamaRecap] {len(configs)} config(s) active(s)")
                     now = datetime.utcnow()
                     for cfg in configs:
                         last = _ollama_last_recap.get(cfg.user_id)
@@ -1314,6 +1322,16 @@ def srv_recordings_delete_all_cameras(user_id=None):
                     os.remove(path)
                     deleted += 1
     return jsonify({"deleted": deleted, "freed_mb": round(freed / 1024 / 1024, 1)})
+
+
+@app.route("/api/ollama/force_recap", methods=["POST"])
+@require_auth
+def api_ollama_force_recap():
+    """Déclenche un récap immédiat sans attendre le timer."""
+    user_id = session["user_id"]
+    # Effacer le timer pour forcer l'exécution au prochain tick
+    _ollama_last_recap.pop(user_id, None)
+    return jsonify({"ok": True, "msg": "Récap forcé — envoi dans moins de 60 secondes."})
 
 
 @app.route("/api/ollama/test", methods=["POST"])

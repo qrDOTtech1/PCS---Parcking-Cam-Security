@@ -68,7 +68,7 @@ class Camera(db.Model):
     recording_enabled = db.Column(db.Boolean, default=True)
     stream_auto_mode = db.Column(db.String(20), default="off")
     is_streaming = db.Column(db.Boolean, default=False)
-    flash_detect_enabled = db.Column(db.Boolean, default=True)  # gyrophare détection
+    flash_detect_enabled = db.Column(db.Boolean, default=False)  # gyrophare détection (opt-in)
     address = db.Column(db.String(200), default="")  # adresse postale
     camera_type = db.Column(db.String(20), default="generic")  # generic | esp32 | ipcam | smartphone | webcam
 
