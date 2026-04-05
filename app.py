@@ -786,9 +786,13 @@ def create_tables():
                         )
 
                         _ollama_last_recap[cfg.user_id] = now
+                        logger.info(f"[OllamaRecap] user={cfg.user_id} recap built ({len(cameras)} cams)")
                         if cfg.send_notification:
-                            eventlet.spawn(send_alert, cfg.user_id, msg)
-                        logger.info(f"[OllamaRecap] user={cfg.user_id} recap sent ({len(cameras)} cams)")
+                            try:
+                                send_alert(cfg.user_id, msg)
+                                logger.info(f"[OllamaRecap] user={cfg.user_id} alert sent")
+                            except Exception as e:
+                                logger.warning(f"[OllamaRecap] send_alert error: {e}")
             except Exception as e:
                 logger.warning(f"[OllamaRecap] worker error: {e}")
 
