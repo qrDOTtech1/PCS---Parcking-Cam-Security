@@ -364,9 +364,8 @@ def create_tables():
             )
         except:
             pass
-        # Migration: désactiver gyrophare sur toutes les caméras existantes (opt-in)
         try:
-            conn.execute(text("UPDATE camera SET flash_detect_enabled = 0"))
+            conn.execute(text("ALTER TABLE user ADD COLUMN emergency_flash_alerts INTEGER DEFAULT 0"))
             conn.commit()
         except:
             pass
@@ -1978,6 +1977,7 @@ def dashboard():
 
     list_mode = getattr(user, "list_mode", "blacklist") or "blacklist"
     ocr_reinforcement = bool(getattr(user, "ocr_reinforcement", False))
+    emergency_flash_alerts = bool(getattr(user, "emergency_flash_alerts", False))
 
     return render_template(
         "dashboard.html",
@@ -1993,6 +1993,7 @@ def dashboard():
         max_targets=max_targets,
         list_mode=list_mode,
         ocr_reinforcement=ocr_reinforcement,
+        emergency_flash_alerts=emergency_flash_alerts,
         ollama_cfg=ollama_cfg,
     )
 
@@ -2643,6 +2644,18 @@ def toggle_list_mode():
         else "liste noire (menaces)"
     )
     flash(f"Mode de liste basculé : {mode_label}.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/dashboard/settings/emergency_flash", methods=["POST"])
+@require_auth
+def toggle_emergency_flash():
+    """Active/désactive les alertes véhicules d'urgence (gyrophares) pour tous les utilisateurs."""
+    user = User.query.get(session["user_id"])
+    user.emergency_flash_alerts = not bool(getattr(user, "emergency_flash_alerts", False))
+    db.session.commit()
+    state = "activées" if user.emergency_flash_alerts else "désactivées"
+    flash(f"Alertes véhicules d'urgence {state}.", "success")
     return redirect(url_for("dashboard"))
 
 

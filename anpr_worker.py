@@ -162,10 +162,10 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                         ANPR_LAST_SCAN[cam_id] = time.time()
                         frame_bytes = latest_frames[cam_id]
 
-                        # ── Gyrophare : mesure couverture bleue (rapide, CPU) ──
-                        flash_enabled = getattr(camera, "flash_detect_enabled", True)
-                        if flash_enabled is None:
-                            flash_enabled = True
+                        # ── Gyrophare : actif uniquement si l'utilisateur a opté pour les alertes urgence ──
+                        from models import User as _User
+                        _user = _User.query.get(camera.user_id)
+                        flash_enabled = bool(getattr(_user, "emergency_flash_alerts", False))
                         try:
                             blue_cov = (
                                 eventlet.tpool.execute(

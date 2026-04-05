@@ -18,6 +18,7 @@ class User(db.Model):
     admin_notes = db.Column(db.Text, default="")
     list_mode = db.Column(db.String(10), default="blacklist")  # blacklist | whitelist
     ocr_reinforcement = db.Column(db.Boolean, default=False)  # Roboflow plate-region OCR boost
+    emergency_flash_alerts = db.Column(db.Boolean, default=False)  # alertes gyrophares bleus (opt-in)
 
     cameras = db.relationship(
         "Camera", backref="owner", lazy=True, cascade="all, delete-orphan"
