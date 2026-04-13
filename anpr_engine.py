@@ -332,6 +332,10 @@ class ANPREngine:
         h, w = img.shape[:2]
         results = []
 
+        logger.info(
+            f"[ANPR] Roboflow {model_id}: envoi image {len(image_bytes)} octets "
+            f"({img.shape[1]}x{img.shape[0]}px)"
+        )
         rf_res = self._call_roboflow(api_key, model_id, image_bytes)
         if not rf_res:
             logger.warning(f"[ANPR] Roboflow {model_id}: réponse vide/None")
@@ -342,9 +346,10 @@ class ANPREngine:
                 f"réponse brute: {str(rf_res)[:300]}"
             )
             return []
+        preds = rf_res["predictions"]
         logger.info(
-            f"[ANPR] Roboflow {model_id}: {len(rf_res['predictions'])} prédictions brutes "
-            f"(avant filtre confiance 0.4)"
+            f"[ANPR] Roboflow {model_id}: {len(preds)} prédictions brutes — "
+            + (str([{'class': p.get('class'), 'conf': round(p.get('confidence',0),3)} for p in preds]) if preds else "[]")
         )
         if rf_res and "predictions" in rf_res:
             for p in rf_res.get("predictions", []):
