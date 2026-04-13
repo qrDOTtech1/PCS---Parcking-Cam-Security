@@ -231,6 +231,16 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                         rf_models = RoboflowModel.query.filter_by(
                             user_id=camera.user_id, is_active=True
                         ).all()
+                        if rf_models:
+                            logger.info(
+                                f"[ANPR] {len(rf_models)} modèle(s) Roboflow actif(s) "
+                                f"pour user={camera.user_id}: "
+                                + ", ".join(f"{m.name}({m.model_endpoint})" for m in rf_models)
+                            )
+                        else:
+                            logger.info(
+                                f"[ANPR] Aucun modèle Roboflow actif pour user={camera.user_id}"
+                            )
 
                         # ── 0b. Renforcement OCR : localiser les plaques via Roboflow ──
                         rf_plate_bboxes = []
@@ -271,14 +281,14 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                 )
                                 for rd in rf_dets:
                                     rf_detections.append((rd, rfm))
-                                if rf_dets:
-                                    logger.info(
-                                        f"[ANPR] Roboflow model={rfm.name}: "
-                                        f"{len(rf_dets)} detections"
-                                    )
                             except Exception as e:
                                 logger.warning(
                                     f"[ANPR] Roboflow error model={rfm.name}: {e}"
+                                )
+                            else:
+                                logger.info(
+                                    f"[ANPR] Roboflow model={rfm.name} endpoint={rfm.model_endpoint}: "
+                                    f"{len(rf_dets)} détection(s)"
                                 )
 
                         # ── 3. Merger Roboflow avec YOLO (IoU > 0.4) ──
@@ -483,7 +493,12 @@ def start_anpr_worker(app, socketio, latest_frames, send_alert_fn, frame_buffers
                                             rf_alert = True
                                             rf_alert_priority = rfm_match.alert_priority or "normal"
                                             rf_alert_label = f"IA: {rf_class} ({rfm_match.name})"
-                                    # log_only → rf_alert reste False
+                                    else:
+                                        # log_only → rf_alert reste False
+                                        logger.info(
+                                            f"[ANPR] Roboflow classe='{rf_class}' détectée "
+                                            f"mais mode=log_only → pas d'alerte envoyée"
+                                        )
 
                             # Log en DB : tout véhicule identifiable (pas le fallback "unknown")
                             # + toujours logger les menaces même si YOLO n'a rien vu
