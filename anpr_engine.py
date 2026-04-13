@@ -333,6 +333,19 @@ class ANPREngine:
         results = []
 
         rf_res = self._call_roboflow(api_key, model_id, image_bytes)
+        if not rf_res:
+            logger.warning(f"[ANPR] Roboflow {model_id}: réponse vide/None")
+            return []
+        if "predictions" not in rf_res:
+            logger.warning(
+                f"[ANPR] Roboflow {model_id}: pas de clé 'predictions' — "
+                f"réponse brute: {str(rf_res)[:300]}"
+            )
+            return []
+        logger.info(
+            f"[ANPR] Roboflow {model_id}: {len(rf_res['predictions'])} prédictions brutes "
+            f"(avant filtre confiance 0.4)"
+        )
         if rf_res and "predictions" in rf_res:
             for p in rf_res.get("predictions", []):
                 rf_conf = p.get("confidence", 0)
