@@ -564,15 +564,6 @@ Add Camera / Ajouter un appareil
                             <span class="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-200 text-green-800">✅ Supporté</span>
                             <p class="text-xs text-green-600 mt-2">Ouvrez <code>/setup</code> sur le téléphone et configurez le flux</p>
                         </div>
-                        <!-- NovaCam -->
-                        <div class="border border-green-200 bg-green-50 rounded-xl p-5 text-center">
-                            <svg class="w-10 h-10 mx-auto mb-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                            </svg>
-                            <h3 class="font-bold text-green-700 text-sm">NovaCam (Matériel dédié)</h3>
-                            <span class="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-200 text-green-800">✅ Supporté</span>
-                            <p class="text-xs text-green-600 mt-2">Matériel dédié — firmware fourni, flash et connectez-vous</p>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -1453,5 +1444,16 @@ Add Camera / Ajouter un appareil
             {% endfor %}
         }, 5000);
     </script>
+
+    <!-- Footer -->
+    <footer class="mt-12 pb-8 text-center text-xs text-gray-400 space-x-2">
+        <span>PCS</span>
+        <span>·</span>
+        <span>Open Source</span>
+        <span>·</span>
+        <span>2026</span>
+        <span>·</span>
+        <a href="{{ url_for('terms') }}" class="text-gray-400 hover:text-gray-600 underline underline-offset-2 transition-colors">Conditions d'utilisation</a>
+    </footer>
 </body>
 </html>
