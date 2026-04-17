@@ -174,8 +174,11 @@ socketio = SocketIO(
     app,
     cors_allowed_origins="*",
     async_mode="eventlet",
-    ping_timeout=30,
-    ping_interval=10,
+    ping_timeout=10,   # tue la connexion morte en 10s (était 30s)
+    ping_interval=5,   # ping toutes les 5s (était 10s)
+    max_http_buffer_size=2 * 1024 * 1024,  # 2 MB max par message
+    logger=False,
+    engineio_logger=False,
 )
 
 limiter = Limiter(
